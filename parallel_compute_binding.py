@@ -11,7 +11,7 @@ from scipy.spatial import ConvexHull, convex_hull_plot_2d
 import alphashape
 from scipy.optimize import curve_fit
 import cvxpy as cp
-
+from binvox_rw import Voxels
 
 def RGBToLAB(RGB):
     RGB = np.array(RGB) / 255.0
@@ -249,10 +249,6 @@ def ellipsoidIntersection(px, py, pz, dx, dy, dz, a, b, c):
 
     return [px + t * dx, py + t * dy, pz + t * dz]
     
-    
-
-
-
 def findPointAtMaxDistance(inputRGB, allLABPoints):
     inputLAB = RGBToLAB([inputRGB])[0]
     allLABPoints = np.array(allLABPoints)
@@ -272,6 +268,39 @@ def process_colors(rgb_range, allLABs):
     CandidateLABs = CandidateLABs.tolist()
     print('finished generating all candidateLABs')
     return CandidateLABs, CandidateRGBs
+
+def convertToVoxels(allLABs, dim):
+    # print("expected size: " + str(len(allLABs)))
+    x_max, y_max, z_max = np.max(allLABs, axis=0)
+    x_min, y_min, z_min = np.min(allLABs, axis=0)
+
+    # print(np.min(allLABs, axis=0))
+    # print(np.max(allLABs, axis=0))
+
+    max_range = 1.1 * max([x_max - x_min, y_max - y_min, z_max - z_min])
+
+    # print(max_range)
+
+    voxels = np.zeros((dim, dim, dim), dtype=np.bool8)
+
+    for lab in allLABs:
+        x = lab[0] - x_min
+        y = lab[1] - y_min
+        z = lab[2] - z_min
+
+        x = dim / max_range * x 
+        y = dim / max_range * y 
+        z = dim / max_range * z 
+        
+        x = int(x)
+        y = int(y)
+        z = int(z)
+
+        voxels[x][y][z] = True
+
+    # print("sum of numpy array: " + str(np.sum(voxels)))
+    # print("done converting to voxels")
+    return voxels
 
 
 def main():
@@ -311,6 +340,14 @@ def main():
             f2.write(f"{rgb[0]},{rgb[1]},{rgb[2]}\n")
 
     print("Number of unique LABs:", len(CandidateLABs))
+
+    dim = 100
+    voxels = convertToVoxels(allLABs, dim)
+    v = Voxels(voxels, [dim, dim, dim], [0.0, 0.0, 0.0], 1.0, 'xyz')
+    filepath = "../allLABs.binvox"
+    with open(filepath, 'w') as fp:
+        Voxels.write(v, fp)
+    print("Saved to file " + filepath)
 
 
 if __name__ == "__main__":
