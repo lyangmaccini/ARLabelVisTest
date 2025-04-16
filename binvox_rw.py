@@ -140,6 +140,8 @@ def read_as_3d_array(fp, fix_coords=True):
     # j -> y
     # k -> z
     values, counts = raw_data[::2], raw_data[1::2]
+    # print(values)
+    # print(counts)
     data = np.repeat(values, counts).astype(np.bool)
     data = data.reshape(dims)
     if fix_coords:
@@ -260,6 +262,7 @@ def write(voxel_model, fp):
     # keep a sort of state machine for writing run length encoding
     state = voxels_flat[0]
     ctr = 0
+    counter = 0
     for c in voxels_flat:
         if c==state:
             ctr += 1
@@ -268,16 +271,19 @@ def write(voxel_model, fp):
                 fp.write(chr(state))
                 fp.write(chr(ctr))
                 ctr = 0
+                counter += 1
         else:
             # if switch state, dump
             fp.write(chr(state))
             fp.write(chr(ctr))
             state = c
             ctr = 1
+            counter += 1
     # flush out remainders
     if ctr > 0:
         fp.write(chr(state))
         fp.write(chr(ctr))
+        counter += 1
 
 if __name__ == '__main__':
     import doctest

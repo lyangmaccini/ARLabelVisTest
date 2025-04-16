@@ -11,7 +11,7 @@ from scipy.spatial import ConvexHull, convex_hull_plot_2d
 import alphashape
 from scipy.optimize import curve_fit
 import cvxpy as cp
-from binvox_rw import Voxels
+import binvox_rw 
 
 def RGBToLAB(RGB):
     RGB = np.array(RGB) / 255.0
@@ -274,8 +274,7 @@ def convertToVoxels(allLABs, dim):
     x_max, y_max, z_max = np.max(allLABs, axis=0)
     x_min, y_min, z_min = np.min(allLABs, axis=0)
 
-    # print(np.min(allLABs, axis=0))
-    # print(np.max(allLABs, axis=0))
+
 
     max_range = 1.1 * max([x_max - x_min, y_max - y_min, z_max - z_min])
 
@@ -284,21 +283,35 @@ def convertToVoxels(allLABs, dim):
     voxels = np.zeros((dim, dim, dim), dtype=np.bool8)
 
     for lab in allLABs:
+        # print("LAB")
+        # print(lab)
         x = lab[0] - x_min
         y = lab[1] - y_min
         z = lab[2] - z_min
+        # print("XYZ")
+        # print([x,y,z])
 
         x = dim / max_range * x 
         y = dim / max_range * y 
         z = dim / max_range * z 
+
+        # print("XYZ")
+        # print([x,y,z])
         
         x = int(x)
         y = int(y)
         z = int(z)
 
+        # print("INDICES")
+        # print([x,y,z])
+
         voxels[x][y][z] = True
 
-    # print("sum of numpy array: " + str(np.sum(voxels)))
+    print(np.min(allLABs, axis=0))
+    print(np.max(allLABs, axis=0))
+    print(voxels.shape)
+
+    print("sum of numpy array: " + str(np.sum(voxels)))
     # print("done converting to voxels")
     return voxels
 
@@ -316,6 +329,15 @@ def main():
     allRGB = np.where(allRGB < 0, 0, allRGB)
     allRGB = np.where(allRGB > 255, 255, allRGB)
     allLABs = RGBToLAB(allRGB)
+
+    dim = 32
+    voxels = convertToVoxels(allLABs, dim)
+    v = binvox_rw.Voxels(voxels, [dim, dim, dim], [0.0, 0.0, 0.0], 1.0, 'xyz')
+    filepath = "../allLABs.binvox"
+    with open(filepath, 'w', encoding="latin-1") as fp:
+        binvox_rw.write(v, fp)
+    print("Saved to file " + filepath)
+
     # boundedLABs = bindLABtoEllipsoid(allLABs, allRGB)
     boundedLABs = bindLABtoEllipsoid(allLABs, allRGB)
 
@@ -340,14 +362,6 @@ def main():
             f2.write(f"{rgb[0]},{rgb[1]},{rgb[2]}\n")
 
     print("Number of unique LABs:", len(CandidateLABs))
-
-    dim = 100
-    voxels = convertToVoxels(allLABs, dim)
-    v = Voxels(voxels, [dim, dim, dim], [0.0, 0.0, 0.0], 1.0, 'xyz')
-    filepath = "../allLABs.binvox"
-    with open(filepath, 'w') as fp:
-        Voxels.write(v, fp)
-    print("Saved to file " + filepath)
 
 
 if __name__ == "__main__":
