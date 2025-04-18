@@ -117,13 +117,13 @@ def train_ours_neural(object_name, query, dimension, metrics_registry):
     for x in range(32):
         for y in range(32):
             for z in range(32):
-                points.append([x, y, z])
-                final_features.append([x/32.0, y/32.0, z/32.0])
+                points.append([x, y, z]) # points in the binvox space as a grid of 32x32x32 points
+                final_features.append([x/32.0, y/32.0, z/32.0]) # points scaled down to the [0, 1) space expected by the model
     
-    final_pred = (model(torch.tensor(final_features)).cpu().detach() >= 0.5).float().numpy()
-    final = np.zeros((32, 32, 32), dtype=np.bool8)
+    final_pred = (model(torch.tensor(final_features)).cpu().detach() >= 0.5).float().numpy() # 0 or 1 predictions on each grid point
+    final = np.zeros((32, 32, 32), dtype=np.bool8) # to store final voxels for binvox file
     for point, prediction in zip(points, final_pred):
         final[point[0]][point[1]][point[2]] = bool(prediction)
     filepath = "../../testNeuralBounding.binvox"
     with open(filepath, 'w', encoding="latin-1") as fp:
-        write(Voxels(final, [32, 32, 32], [0.0, 0.0, 0.0], 1.0, 'xyz'), fp)
+        write(Voxels(final, [32, 32, 32], [0.0, 0.0, 0.0], 1.0, 'xyz'), fp) # write binvox file
