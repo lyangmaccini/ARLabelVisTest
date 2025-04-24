@@ -8,6 +8,9 @@ from src.wiring import get_source_data, get_training_data, get_model
 import numpy as np
 from data.binvox_rw import write, Voxels
 import torch
+from skimage import measure
+import matplotlib.pyplot as plt
+import pyvista as pv
 
 def train_ours_neural(object_name, query, dimension, metrics_registry):
     print(f"oursNeural {object_name} {dimension}D {query} query")
@@ -30,7 +33,7 @@ def train_ours_neural(object_name, query, dimension, metrics_registry):
     # initialise counter and print_frequency
     weight_schedule_frequency = 250_000
     # total_iterations = weight_schedule_frequency * 200  # set high iterations for early stopping to terminate training
-    total_iterations = 10000
+    total_iterations = 30000
     evaluation_frequency = weight_schedule_frequency // 5
     print_frequency = 1000  # print loss every 1k iterations
 
@@ -112,18 +115,60 @@ def train_ours_neural(object_name, query, dimension, metrics_registry):
             print("class weight", class_weight)
             print("BCE loss negative class weight", criterion.negative_class_weight)
     # print(data.shape)
+
+    print("Writing to file")
     final_features = []
     points = []
-    for x in range(32):
-        for y in range(32):
-            for z in range(32):
+    dim = 32.0
+    for x in range(int(dim)):
+        for y in range(int(dim)):
+            for z in range(int(dim)):
                 points.append([x, y, z]) # points in the binvox space as a grid of 32x32x32 points
-                final_features.append([x/32.0, y/32.0, z/32.0]) # points scaled down to the [0, 1) space expected by the model
+                final_features.append([x/dim, y/dim, z/dim]) # points scaled down to the [0, 1) space expected by the model
     
     final_pred = (model(torch.tensor(final_features)).cpu().detach() >= 0.5).float().numpy() # 0 or 1 predictions on each grid point
-    final = np.zeros((32, 32, 32), dtype=np.bool8) # to store final voxels for binvox file
+    final = np.zeros((int(dim), int(dim), int(dim)), dtype=np.bool8) # to store final voxels for binvox file
     for point, prediction in zip(points, final_pred):
         final[point[0]][point[1]][point[2]] = bool(prediction)
-    filepath = "../../testNeuralBounding.binvox"
+    
+    verts, faces, normals, values = measure.marching_cubes(final, 0.0)
+    # print("plotting")
+    # print(verts)
+    # print(verts.shape)
+    # print(faces)
+    # print(faces.shape)
+
+    new_faces = []
+    for face in faces:
+        arr = np.insert(face, 0, 3)
+        new_faces.append(arr)
+    faces = np.hstack(new_faces)
+    # print(faces)
+    # print(faces.shape)
+
+    mesh = pv.PolyData(verts, faces)
+    mesh.subdivide(1, subfilter='linear', inplace=True)
+    verts = mesh.points
+    # print("new verts")
+    # print(verts)
+    # print(mesh.n_verts)
+    # print(mesh.n_points)
+    # print(verts.shape)
+    
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    ax.scatter(verts[:,0], verts[:,1], verts[:,2], c = "blue", alpha=0.5)
+    ax.set_xlim([-2, 35])   # Set x-axis limits
+    ax.set_ylim([-2, 35])   # Set y-axis limits
+    ax.set_zlim([-2, 35])   # Set z-axis limits
+    ax.set_box_aspect([1.0, 1.0, 1.0])
+    ax.set_xlabel("L")
+    ax.set_ylabel("a")
+    ax.set_zlabel("b")
+    ax.set_title("Mesh Surface Plot")
+
+    plt.show()
+
+    filepath = "../../testNeuralBounding_" + str(int(dim)) + ".binvox"
     with open(filepath, 'w', encoding="latin-1") as fp:
-        write(Voxels(final, [32, 32, 32], [0.0, 0.0, 0.0], 1.0, 'xyz'), fp) # write binvox file
+        write(Voxels(final, [int(dim), int(dim), int(dim)], [0.0, 0.0, 0.0], 1.0, 'xyz'), fp) # write binvox file

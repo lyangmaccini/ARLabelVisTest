@@ -274,11 +274,7 @@ def convertToVoxels(allLABs, dim):
     x_max, y_max, z_max = np.max(allLABs, axis=0)
     x_min, y_min, z_min = np.min(allLABs, axis=0)
 
-
-
     max_range = 1.1 * max([x_max - x_min, y_max - y_min, z_max - z_min])
-
-    # print(max_range)
 
     voxels = np.zeros((dim, dim, dim), dtype=np.bool8)
 
@@ -316,12 +312,28 @@ def convertToVoxels(allLABs, dim):
     return voxels
 
 
+def voxelToPoint(allLABs, voxel, dim):
+    x_max, y_max, z_max = np.max(allLABs, axis=0)
+    x_min, y_min, z_min = np.min(allLABs, axis=0)
+
+    max_range = 1.1 * max([x_max - x_min, y_max - y_min, z_max - z_min])
+
+    new_x = max_range * voxel[0] / dim
+    new_y = max_range * voxel[1] / dim
+    new_z = max_range * voxel[2] / dim
+
+    new_x += x_min
+    new_y += y_min
+    new_z += z_min
+
+    return np.array([new_x, new_y, new_z])
+
 def main():
     num_cpus = os.cpu_count() 
     n_processes = num_cpus - 4 # Change this to use more/less CPUs. 
     print("Number of CPUs:", num_cpus, "Number of CPUs we are using:", n_processes)
 
-    stepSize = 16
+    stepSize = 4
     # Sample: 0, 15, 31, 45, ... 255
     allRGB = np.array([[r-1, g-1, b-1] for r in range(0, 257, stepSize)
                                for g in range(0, 257, stepSize)
@@ -330,10 +342,12 @@ def main():
     allRGB = np.where(allRGB > 255, 255, allRGB)
     allLABs = RGBToLAB(allRGB)
 
-    dim = 32
+    dim = 64
+    shape = alphashape.alphashape(allLABs, alpha=0.005)
+    boundaryLABs = shape.vertices
     voxels = convertToVoxels(allLABs, dim)
     v = binvox_rw.Voxels(voxels, [dim, dim, dim], [0.0, 0.0, 0.0], 1.0, 'xyz')
-    filepath = "../allLABs.binvox"
+    filepath = "allLABs" + str(dim) + ".binvox"
     with open(filepath, 'w', encoding="latin-1") as fp:
         binvox_rw.write(v, fp)
     print("Saved to file " + filepath)
