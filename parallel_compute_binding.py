@@ -282,27 +282,17 @@ def convertToVoxels(allLABs, dim):
     voxels = np.zeros((dim, dim, dim), dtype=np.bool8)
 
     for lab in allLABs:
-        # print("LAB")
-        # print(lab)
         x = lab[0] - x_min
         y = lab[1] - y_min
         z = lab[2] - z_min
-        # print("XYZ")
-        # print([x,y,z])
 
         x = dim / max_range * x 
         y = dim / max_range * y 
         z = dim / max_range * z 
-
-        # print("XYZ")
-        # print([x,y,z])
         
         x = int(x)
         y = int(y)
         z = int(z)
-
-        # print("INDICES")
-        # print([x,y,z])
 
         voxels[x][y][z] = True
 
@@ -319,15 +309,10 @@ def pointToVoxel(point, dim, x_min, y_min, z_min, max_range):
         x = point[0] - x_min
         y = point[1] - y_min
         z = point[2] - z_min
-        # print("XYZ")
-        # print([x,y,z])
 
         x = dim / max_range * x 
         y = dim / max_range * y 
         z = dim / max_range * z 
-
-        # print("XYZ")
-        # print([x,y,z])
         
         x = int(x)
         y = int(y)
@@ -358,10 +343,14 @@ def bindToMeshBinding(meshVertices, allLABs, voxels, voxelDim):
     x_max, y_max, z_max = np.max(allLABs, axis=0)
     x_min, y_min, z_min = np.min(allLABs, axis=0)
     max_range = 1.1 * max([x_max - x_min, y_max - y_min, z_max - z_min])
-    
+    print(len(allLABs))
     for i, lab in enumerate(allLABs):
+        # print(i)
+        if i % 1000 == 0:
+            print(i)
         voxel = pointToVoxel(lab, voxelDim, x_min, y_min, z_min, max_range)
-        if not bool(voxels[voxel]):
+        if not bool(voxels[voxel[0]][voxel[1]][voxel[2]]):
+            # print(i)
         # if not insideVoxels(voxels, lab):
             minDistance = 1000000000
             bestVertex = meshVertices[0]
@@ -369,15 +358,16 @@ def bindToMeshBinding(meshVertices, allLABs, voxels, voxelDim):
                 distance = math.sqrt((vertex[0] - lab[0]) ** 2 + (vertex[1] - lab[1]) ** 2 + (vertex[2] - lab[2]) ** 2)
                 if (distance < minDistance):
                     bestVertex = vertex
-        allLABs[i] = bestVertex
-    return bestVertex  
+                    minDistance = distance
+            allLABs[i] = bestVertex
+    return allLABs  
 
 def main():
     num_cpus = os.cpu_count() 
     n_processes = num_cpus - 4 # Change this to use more/less CPUs. 
     print("Number of CPUs:", num_cpus, "Number of CPUs we are using:", n_processes)
 
-    stepSize = 4
+    stepSize = 16
     # Sample: 0, 15, 31, 45, ... 255
     allRGB = np.array([[r-1, g-1, b-1] for r in range(0, 257, stepSize)
                                for g in range(0, 257, stepSize)
@@ -395,10 +385,13 @@ def main():
     #     binvox_rw.write(v, fp)
     # print("Saved to file " + filepath)
 
+    print("opening file")
     filepath = "testNeuralBounding_" + str(dim) + ".binvox"
     voxels = np.zeros((dim, dim, dim))
-    # read in neural bounding binvox here, store in voxels
+    with open(filepath, "rb") as fp:
+        voxels = binvox_rw.read_as_3d_array(fp).data
 
+    print("meshing")
     verts, faces, _, _ = measure.marching_cubes(voxels, 0.0)
     new_faces = []
     for face in faces:
@@ -407,24 +400,55 @@ def main():
     faces = np.hstack(new_faces)
 
     mesh = pv.PolyData(verts, faces)
-    mesh.subdivide(1, subfilter='linear', inplace=True)
-    verts = mesh.points
+    print("subdividing")
+    mesh.subdivide(1, subfilter='loop', inplace=True)
+    verts = mesh.points # in voxel space
+
+    x_max, y_max, z_max = np.max(allLABs, axis=0)
+    x_min, y_min, z_min = np.min(allLABs, axis=0)
+    max_range = 1.1 * max([x_max - x_min, y_max - y_min, z_max - z_min])
+
+    for i in range(len(verts)):
+        new_x = max_range * verts[i][0] / dim
+        new_y = max_range * verts[i][1] / dim
+        new_z = max_range * verts[i][2] / dim
+
+        new_x += x_min
+        new_y += y_min
+        new_z += z_min
+
+        verts[i] = [new_x, new_y, new_z]
     
+    # for visualization (mesh):
+    # fig = plt.figure()
+    # ax = fig.add_subplot(111, projection='3d')
+    # ax.scatter(verts[:,0], verts[:,1], verts[:,2], c = "blue", alpha=0.5)
+    # ax.set_xlim([-2, 35])   # Set x-axis limits
+    # ax.set_ylim([-2, 35])   # Set y-axis limits
+    # ax.set_zlim([-2, 35])   # Set z-axis limits
+    # ax.set_box_aspect([1.0, 1.0, 1.0])
+    # ax.set_xlabel("L")
+    # ax.set_ylabel("a")
+    # ax.set_zlabel("b")
+    # ax.set_title("Mesh Surface Plot")
+    # plt.show()
+
+    print("binding")
+    boundedLABs = bindToMeshBinding(verts, allLABs, voxels, dim)
+
+    # for visualization (bounded LABs):
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
-    ax.scatter(verts[:,0], verts[:,1], verts[:,2], c = "blue", alpha=0.5)
-    ax.set_xlim([-2, 35])   # Set x-axis limits
-    ax.set_ylim([-2, 35])   # Set y-axis limits
-    ax.set_zlim([-2, 35])   # Set z-axis limits
+    ax.scatter(boundedLABs[:,0], boundedLABs[:,1], boundedLABs[:,2], c = allRGB/255.0, alpha=0.15)
+    ax.set_xlim([-100, 100]) 
+    ax.set_ylim([-100, 100])  
+    ax.set_zlim([-100, 100])  
     ax.set_box_aspect([1.0, 1.0, 1.0])
     ax.set_xlabel("L")
     ax.set_ylabel("a")
     ax.set_zlabel("b")
-    ax.set_title("Mesh Surface Plot")
-
+    ax.set_title("Bounded LABs Surface Plot")
     plt.show()
-
-    boundedLABs = bindToMeshBinding(verts, allLABs, voxels, dim)
 
     print("number allLAB", len(allLABs))
     print("number boundedLABs", len(boundedLABs))
