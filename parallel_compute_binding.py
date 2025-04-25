@@ -12,6 +12,9 @@ import alphashape
 from scipy.optimize import curve_fit
 import cvxpy as cp
 import binvox_rw 
+from skimage import measure
+import matplotlib.pyplot as plt
+import pyvista as pv
 
 def RGBToLAB(RGB):
     RGB = np.array(RGB) / 255.0
@@ -312,6 +315,25 @@ def convertToVoxels(allLABs, dim):
     return voxels
 
 
+def pointToVoxel(point, dim, x_min, y_min, z_min, max_range):
+        x = point[0] - x_min
+        y = point[1] - y_min
+        z = point[2] - z_min
+        # print("XYZ")
+        # print([x,y,z])
+
+        x = dim / max_range * x 
+        y = dim / max_range * y 
+        z = dim / max_range * z 
+
+        # print("XYZ")
+        # print([x,y,z])
+        
+        x = int(x)
+        y = int(y)
+        z = int(z)
+        return np.array([x, y, z])
+
 def voxelToPoint(allLABs, voxel, dim):
     x_max, y_max, z_max = np.max(allLABs, axis=0)
     x_min, y_min, z_min = np.min(allLABs, axis=0)
@@ -328,6 +350,28 @@ def voxelToPoint(allLABs, voxel, dim):
 
     return np.array([new_x, new_y, new_z])
 
+def insideVoxels(voxels, point):
+    voxel = pointToVoxel(point)
+    return bool(voxels[voxel])
+
+def bindToMeshBinding(meshVertices, allLABs, voxels, voxelDim):
+    x_max, y_max, z_max = np.max(allLABs, axis=0)
+    x_min, y_min, z_min = np.min(allLABs, axis=0)
+    max_range = 1.1 * max([x_max - x_min, y_max - y_min, z_max - z_min])
+    
+    for i, lab in enumerate(allLABs):
+        voxel = pointToVoxel(lab, voxelDim, x_min, y_min, z_min, max_range)
+        if not bool(voxels[voxel]):
+        # if not insideVoxels(voxels, lab):
+            minDistance = 1000000000
+            bestVertex = meshVertices[0]
+            for vertex in meshVertices:
+                distance = math.sqrt((vertex[0] - lab[0]) ** 2 + (vertex[1] - lab[1]) ** 2 + (vertex[2] - lab[2]) ** 2)
+                if (distance < minDistance):
+                    bestVertex = vertex
+        allLABs[i] = bestVertex
+    return bestVertex  
+
 def main():
     num_cpus = os.cpu_count() 
     n_processes = num_cpus - 4 # Change this to use more/less CPUs. 
@@ -342,18 +386,45 @@ def main():
     allRGB = np.where(allRGB > 255, 255, allRGB)
     allLABs = RGBToLAB(allRGB)
 
-    dim = 64
-    shape = alphashape.alphashape(allLABs, alpha=0.005)
-    boundaryLABs = shape.vertices
-    voxels = convertToVoxels(allLABs, dim)
-    v = binvox_rw.Voxels(voxels, [dim, dim, dim], [0.0, 0.0, 0.0], 1.0, 'xyz')
-    filepath = "allLABs" + str(dim) + ".binvox"
-    with open(filepath, 'w', encoding="latin-1") as fp:
-        binvox_rw.write(v, fp)
-    print("Saved to file " + filepath)
+    dim = 32
 
-    # boundedLABs = bindLABtoEllipsoid(allLABs, allRGB)
-    boundedLABs = bindLABtoEllipsoid(allLABs, allRGB)
+    # voxels = convertToVoxels(allLABs, dim)
+    # v = binvox_rw.Voxels(voxels, [dim, dim, dim], [0.0, 0.0, 0.0], 1.0, 'xyz')
+    # filepath = "allLABs" + str(dim) + ".binvox"
+    # with open(filepath, 'w', encoding="latin-1") as fp:
+    #     binvox_rw.write(v, fp)
+    # print("Saved to file " + filepath)
+
+    filepath = "testNeuralBounding_" + str(dim) + ".binvox"
+    voxels = np.zeros((dim, dim, dim))
+    # read in neural bounding binvox here, store in voxels
+
+    verts, faces, _, _ = measure.marching_cubes(voxels, 0.0)
+    new_faces = []
+    for face in faces:
+        arr = np.insert(face, 0, 3)
+        new_faces.append(arr)
+    faces = np.hstack(new_faces)
+
+    mesh = pv.PolyData(verts, faces)
+    mesh.subdivide(1, subfilter='linear', inplace=True)
+    verts = mesh.points
+    
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    ax.scatter(verts[:,0], verts[:,1], verts[:,2], c = "blue", alpha=0.5)
+    ax.set_xlim([-2, 35])   # Set x-axis limits
+    ax.set_ylim([-2, 35])   # Set y-axis limits
+    ax.set_zlim([-2, 35])   # Set z-axis limits
+    ax.set_box_aspect([1.0, 1.0, 1.0])
+    ax.set_xlabel("L")
+    ax.set_ylabel("a")
+    ax.set_zlabel("b")
+    ax.set_title("Mesh Surface Plot")
+
+    plt.show()
+
+    boundedLABs = bindToMeshBinding(verts, allLABs, voxels, dim)
 
     print("number allLAB", len(allLABs))
     print("number boundedLABs", len(boundedLABs))
