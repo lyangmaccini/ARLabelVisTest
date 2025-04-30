@@ -376,82 +376,90 @@ def main():
     allRGB = np.where(allRGB > 255, 255, allRGB)
     allLABs = RGBToLAB(allRGB)
 
-    dim = 32
+    print("labs ready")
+    dim = 100
 
-    # voxels = convertToVoxels(allLABs, dim)
-    # v = binvox_rw.Voxels(voxels, [dim, dim, dim], [0.0, 0.0, 0.0], 1.0, 'xyz')
-    # filepath = "allLABs" + str(dim) + ".binvox"
-    # with open(filepath, 'w', encoding="latin-1") as fp:
-    #     binvox_rw.write(v, fp)
-    # print("Saved to file " + filepath)
+    write = False
+    if write:
+        voxels = convertToVoxels(allLABs, dim)
+        v = binvox_rw.Voxels(voxels, [dim, dim, dim], [0.0, 0.0, 0.0], 1.0, 'xyz')
+        filepath = "allLABs" + str(dim) + ".binvox"
+        with open(filepath, 'w', encoding="latin-1") as fp:
+            binvox_rw.write(v, fp)
+        print("Saved to file " + filepath)
 
-    print("opening file")
-    filepath = "testNeuralBounding_" + str(dim) + ".binvox"
-    voxels = np.zeros((dim, dim, dim))
-    with open(filepath, "rb") as fp:
-        voxels = binvox_rw.read_as_3d_array(fp).data
+    read = True
+    if read:
+        print("opening file")
+        filepath = "testNeuralBounding_" + str(dim) + ".binvox"
+        voxels = np.zeros((dim, dim, dim))
+        with open(filepath, "rb") as fp:
+            voxels = binvox_rw.read_as_3d_array(fp).data
 
-    print("meshing")
-    verts, faces, _, _ = measure.marching_cubes(voxels, 0.0)
-    new_faces = []
-    for face in faces:
-        arr = np.insert(face, 0, 3)
-        new_faces.append(arr)
-    faces = np.hstack(new_faces)
+        print("meshing")
+        verts, faces, _, _ = measure.marching_cubes(voxels, 0.0)
+        new_faces = []
+        for face in faces:
+            arr = np.insert(face, 0, 3)
+            new_faces.append(arr)
+        faces = np.hstack(new_faces) 
 
-    mesh = pv.PolyData(verts, faces)
-    print("subdividing")
-    mesh.subdivide(1, subfilter='loop', inplace=True)
-    verts = mesh.points # in voxel space
 
-    x_max, y_max, z_max = np.max(allLABs, axis=0)
-    x_min, y_min, z_min = np.min(allLABs, axis=0)
-    max_range = 1.1 * max([x_max - x_min, y_max - y_min, z_max - z_min])
 
-    for i in range(len(verts)):
-        new_x = max_range * verts[i][0] / dim
-        new_y = max_range * verts[i][1] / dim
-        new_z = max_range * verts[i][2] / dim
+        mesh = pv.PolyData(verts, faces)
+        print("subdividing")
+        # mesh.subdivide(1, subfilter='loop', inplace=True)
+        verts = mesh.points # in voxel space
 
-        new_x += x_min
-        new_y += y_min
-        new_z += z_min
+        x_max, y_max, z_max = np.max(allLABs, axis=0)
+        x_min, y_min, z_min = np.min(allLABs, axis=0)
+        max_range = 1.1 * max([x_max - x_min, y_max - y_min, z_max - z_min])
 
-        verts[i] = [new_x, new_y, new_z]
+        for i in range(len(verts)):
+            new_x = max_range * verts[i][0] / dim
+            new_y = max_range * verts[i][1] / dim
+            new_z = max_range * verts[i][2] / dim
+
+            new_x += x_min
+            new_y += y_min
+            new_z += z_min
+
+            verts[i] = [new_x, new_y, new_z]
     
-    # for visualization (mesh):
-    # fig = plt.figure()
-    # ax = fig.add_subplot(111, projection='3d')
-    # ax.scatter(verts[:,0], verts[:,1], verts[:,2], c = "blue", alpha=0.5)
-    # ax.set_xlim([-2, 35])   # Set x-axis limits
-    # ax.set_ylim([-2, 35])   # Set y-axis limits
-    # ax.set_zlim([-2, 35])   # Set z-axis limits
-    # ax.set_box_aspect([1.0, 1.0, 1.0])
-    # ax.set_xlabel("L")
-    # ax.set_ylabel("a")
-    # ax.set_zlabel("b")
-    # ax.set_title("Mesh Surface Plot")
-    # plt.show()
+        # for visualization (mesh):
+        # fig = plt.figure()
+        # ax = fig.add_subplot(111, projection='3d')
+        # ax.scatter(verts[:,0], verts[:,1], verts[:,2], c = "blue", alpha=0.5)
+        # ax.set_xlim([-2, 35])   # Set x-axis limits
+        # ax.set_ylim([-2, 35])   # Set y-axis limits
+        # ax.set_zlim([-2, 35])   # Set z-axis limits
+        # ax.set_box_aspect([1.0, 1.0, 1.0])
+        # ax.set_xlabel("L")
+        # ax.set_ylabel("a")
+        # ax.set_zlabel("b")
+        # ax.set_title("Mesh Surface Plot")
+        # plt.show()
 
-    print("binding")
-    boundedLABs = bindToMeshBinding(verts, allLABs, voxels, dim)
+        print("binding")
+        boundedLABs = bindToMeshBinding(verts, allLABs, voxels, dim)
+        # boundedLABs = allLABs
 
-    # for visualization (bounded LABs):
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
-    ax.scatter(boundedLABs[:,0], boundedLABs[:,1], boundedLABs[:,2], c = allRGB/255.0, alpha=0.15)
-    ax.set_xlim([-100, 100]) 
-    ax.set_ylim([-100, 100])  
-    ax.set_zlim([-100, 100])  
-    ax.set_box_aspect([1.0, 1.0, 1.0])
-    ax.set_xlabel("L")
-    ax.set_ylabel("a")
-    ax.set_zlabel("b")
-    ax.set_title("Bounded LABs Surface Plot")
-    plt.show()
+        # for visualization (bounded LABs):
+        fig = plt.figure()
+        ax = fig.add_subplot(111, projection='3d')
+        ax.scatter(boundedLABs[:,2], boundedLABs[:,1], boundedLABs[:,0], c = allRGB/255.0, alpha=0.15)
+        ax.set_xlim([-100, 100]) 
+        ax.set_ylim([-100, 100])  
+        ax.set_zlim([-100, 100])  
+        ax.set_box_aspect([1.0, 1.0, 1.0])
+        ax.set_xlabel("b")
+        ax.set_ylabel("a")
+        ax.set_zlabel("L")
+        # ax.set_title("Bounded LABs Surface Plot")
+        plt.show()
 
-    print("number allLAB", len(allLABs))
-    print("number boundedLABs", len(boundedLABs))
+        print("number allLAB", len(allLABs))
+        print("number boundedLABs", len(boundedLABs))
 
     print("finished preparing all LABs")
     rgb_ranges = np.array_split(allRGB, n_processes)
