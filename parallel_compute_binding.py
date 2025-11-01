@@ -1,22 +1,19 @@
 import numpy as np
-import matplotlib.pyplot as plt
-from mpl_toolkits import mplot3d
+# import matplotlib.pyplot as plt
+# from mpl_toolkits import mplot3d
 from skimage.color import deltaE_cie76, deltaE_ciede94, deltaE_ciede2000, lab2rgb 
-from tqdm import tqdm
+# from tqdm import tqdm
 import os
 from multiprocessing import Pool
-import time
-import math
-from scipy.spatial import ConvexHull, convex_hull_plot_2d
-import alphashape
-from scipy.optimize import curve_fit
-import binvox_rw 
-from skimage import measure
+# from scipy.spatial import ConvexHull, convex_hull_plot_2d
+# from scipy.optimize import curve_fit
+# from skimage import measure
 import matplotlib.pyplot as plt
 import pyvista as pv 
-from binding import bindToMeshBinding
-from voxels import convertToVoxels
-from mesh_optimization import pointsToMesh, ColorSpaceOptimizer
+# from binding import bindToMeshBinding
+# from voxels import convertToVoxels
+from mesh_optimization import pointsToMesh, ColorSpaceOptimizer, ColorSpaceTorchOptimizer
+import trimesh
 
 def RGBToLAB(RGB):
     RGB = np.array(RGB) / 255.0
@@ -80,9 +77,13 @@ def main():
     print("labs ready")
 
     mesh = pointsToMesh(allLABs)
-    optimizer = ColorSpaceOptimizer(mesh)
-    optimizer.optimizeMesh()
+    # mesh.show()
+    optimizer = ColorSpaceTorchOptimizer(mesh)
+    print("hello")
+    final_mesh = optimizer.optimizeMesh()
 
+    optimized_trimesh = trimesh.Trimesh(vertices=final_mesh.verts_packed().detach().numpy(), faces=final_mesh.faces_packed().detach().numpy())
+    optimized_trimesh.show()
     # Voxelizing mesh: neural binding requires a voxelized point cloud. When we run the neural binding code, it automatically
     # saves a .binvox file as testNeuralBounding_<dims>.binvox to finish the mapping on.
     # dim = 100
@@ -169,24 +170,24 @@ def main():
     #     print("number allLAB", len(allLABs))
     #     print("number boundedLABs", len(boundedLABs))
 
-    print("finished preparing all LABs")
-    rgb_ranges = np.array_split(allRGB, n_processes)
+    # print("finished preparing all LABs")
+    # rgb_ranges = np.array_split(allRGB, n_processes)
 
-    with Pool(n_processes) as pool:
-        results = pool.starmap(process_colors, [(rgb_range, boundedLABs) for rgb_range in rgb_ranges])
+    # with Pool(n_processes) as pool:
+    #     results = pool.starmap(process_colors, [(rgb_range, boundedLABs) for rgb_range in rgb_ranges])
 
-    CandidateLABs = []
-    CandidateRGBs = []
-    for lab, rgb in results:
-        CandidateLABs += lab
-        CandidateRGBs += rgb
+    # CandidateLABs = []
+    # CandidateRGBs = []
+    # for lab, rgb in results:
+    #     CandidateLABs += lab
+    #     CandidateRGBs += rgb
 
-    with open("CandidateLABvals_step16_76_ellipsoid.txt", "w") as f, open("CorrespondingRGBVals_step16_76_ellipsoid.txt", "w") as f2:
-        for lab, rgb in zip(CandidateLABs, CandidateRGBs):
-            f.write(f"{lab[0]},{lab[1]},{lab[2]}\n")
-            f2.write(f"{rgb[0]},{rgb[1]},{rgb[2]}\n")
+    # with open("CandidateLABvals_step16_76_ellipsoid.txt", "w") as f, open("CorrespondingRGBVals_step16_76_ellipsoid.txt", "w") as f2:
+    #     for lab, rgb in zip(CandidateLABs, CandidateRGBs):
+    #         f.write(f"{lab[0]},{lab[1]},{lab[2]}\n")
+    #         f2.write(f"{rgb[0]},{rgb[1]},{rgb[2]}\n")
 
-    print("Number of unique LABs:", len(CandidateLABs))
+    # print("Number of unique LABs:", len(CandidateLABs))
 
 
 if __name__ == "__main__":
