@@ -82,8 +82,8 @@ def main():
     print("hello")
     final_mesh = optimizer.optimizeMesh()
 
-    optimized_trimesh = trimesh.Trimesh(vertices=final_mesh.verts_packed().detach().numpy(), faces=final_mesh.faces_packed().detach().numpy())
-    optimized_trimesh.show()
+    # optimized_trimesh = trimesh.Trimesh(vertices=final_mesh.verts_packed().detach().numpy(), faces=final_mesh.faces_packed().detach().numpy())
+    final_mesh.show()
     # Voxelizing mesh: neural binding requires a voxelized point cloud. When we run the neural binding code, it automatically
     # saves a .binvox file as testNeuralBounding_<dims>.binvox to finish the mapping on.
     # dim = 100
