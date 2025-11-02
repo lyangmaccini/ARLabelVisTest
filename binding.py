@@ -11,10 +11,11 @@ from scipy.spatial import ConvexHull, convex_hull_plot_2d
 import alphashape
 from scipy.optimize import curve_fit
 import cvxpy as cp
-import binvox_rw 
+# import binvox_rw 
 from skimage import measure
 import matplotlib.pyplot as plt
 import pyvista as pv 
+import trimesh
 
 def bindToMeshBinding(meshVertices, allLABs, voxels, voxelDim):
     x_max, y_max, z_max = np.max(allLABs, axis=0)
@@ -37,6 +38,27 @@ def bindToMeshBinding(meshVertices, allLABs, voxels, voxelDim):
                     bestVertex = vertex
                     minDistance = distance
             allLABs[i] = bestVertex
+    return allLABs 
+
+def vertex_distance(vertex, lab):
+    return math.sqrt((vertex[0] - lab[0]) ** 2 + (vertex[1] - lab[1]) ** 2 + (vertex[2] - lab[2]) ** 2)
+
+def bindToOptimizedMeshBinding(mesh: trimesh.Trimesh, allLABs):
+    vertices = mesh.vertices
+    print(len(allLABs))
+    for i, lab in enumerate(allLABs):
+        # print(i)
+        if i % 1000 == 0:
+            print(i)
+
+        bestVertex = vertices[0]
+        minDistance = vertex_distance(bestVertex, lab)
+        for vertex in vertices:
+            distance = vertex_distance(vertex, lab)
+            if (distance < minDistance):
+                bestVertex = vertex
+                minDistance = distance
+        allLABs[i] = bestVertex
     return allLABs 
 
 def bindLABtoEllipsoid(allLABPoints, allRGB):
