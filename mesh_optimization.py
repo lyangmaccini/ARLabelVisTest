@@ -119,10 +119,10 @@ class ColorSpaceTorchOptimizer:
         self.faces = torch.tensor(mesh.faces, dtype=torch.int64, device=device)
 
         self.original_vertices = torch.tensor(mesh.vertices, dtype=torch.float32, device=device)
-        self.iterations = 100
+        self.iterations = 100000
 
         self.deform_verts = torch.zeros_like(self.vertices, device=device, requires_grad=True) 
-        self.optimizer = torch.optim.SGD([self.deform_verts], lr=1e-3, momentum=0.9)
+        self.optimizer = torch.optim.SGD([self.deform_verts], lr=1e-4, momentum=0.85)
         # self.original_mesh = mesh.copy()
         print("original volume:")
         # print(self.original_mesh.volume)
@@ -131,10 +131,10 @@ class ColorSpaceTorchOptimizer:
         print(torch.cuda.is_available())
         
         # Containment:
-        self.containment_weight = 1000000.0
+        self.containment_weight = 10000.0
 
         # Curvature:
-        self.curvature_weight = 50000.0
+        self.curvature_weight = 1200.0
 
         # Volume:
         self.volume_weight = 0.0000001
@@ -175,8 +175,14 @@ class ColorSpaceTorchOptimizer:
         # curve = 0.1 * laplacian_loss + edge_loss + 0.01 * normal_loss
         # print("curve")
         # print(curve)
-        c = torch.mean(self.gaussian_curvature(vertices, faces) ** 2)
+
+
+        c = torch.max(self.gaussian_curvature(vertices, faces) ** 2)
         # print("cur")
+        # print(c)
+        # smoothed_verts = kal.metrics.trianglemesh.uniform_laplacian_smoothing(torch.unsqueeze(vertices, dim=1), faces)[0]
+        # distances = torch.norm(vertices - smoothed_verts, dim=1)
+        # c = distances.sum()
         # print(c)
         return c
             
@@ -188,8 +194,9 @@ class ColorSpaceTorchOptimizer:
         return -vol
     
     def loss_fn(self, vertices, faces):
-        return self.containment_weight * self.containment(vertices, faces) + self.curvature_weight * self.curvature(vertices, faces) + self.volume_weight * self.volume(vertices, faces)
+        # return self.containment_weight * self.containment(vertices, faces) + self.curvature_weight * self.curvature(vertices, faces) + self.volume_weight * self.volume(vertices, faces)
         # return self.containment(vertices, faces)
+        return self.curvature_weight * self.curvature(vertices, faces) + self.containment_weight * self.containment(vertices, faces)
     
     def optimizeMesh(self):
         for i in tqdm(range(self.iterations)):
@@ -201,7 +208,7 @@ class ColorSpaceTorchOptimizer:
             loss.backward()
             self.optimizer.step()
 
-            if i % 10 == 0:
+            if i % 1000 == 0:
                 print("iteration:")
                 print(i)
                 print("loss:")
