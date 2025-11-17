@@ -18,6 +18,9 @@ import trimesh
 import math
 from trimesh.viewer import SceneViewer
 import time
+import imageio
+from PIL import Image
+import io
 
 def RGBToLAB(RGB):
     RGB = np.array(RGB) / 255.0
@@ -129,16 +132,28 @@ def main():
     scene.add_geometry(intermediate_meshes[0])
     # scene.show()
     viewer = scene.show()
-    print(viewer)
+    # print(viewer)
     # while not viewer.is_active:
         # time.sleep(0.1)
-    time.sleep(2)
-    for mesh in intermediate_meshes[1:]:
-        scene.geometry[list(scene.geometry.keys())[0]].vertices = mesh.vertices
-        viewer._redraw()
-        time.sleep(0.1)
-        print("hello")
+    # time.sleep(2)
+    # for mesh in intermediate_meshes[1:]:
+    #     scene.geometry[list(scene.geometry.keys())[0]].vertices = mesh.vertices
+    #     viewer._redraw()
+    #     time.sleep(0.1)
+    #     print("hello")
         # scene.show()
+    frames = []
+    r = trimesh.transformations.rotation_matrix(np.pi/2.0, [0, 1, 0])
+    for mesh in intermediate_meshes:
+        s = trimesh.Scene(mesh)
+        s.apply_transform(r)
+        png = s.save_image(resolution=[800,800], visible=True)
+        # Image.open(io.BytesIO(png)).show()
+        frames.append(np.array(Image.open(io.BytesIO(png))))
+    imageio.mimsave("energy.gif", frames, duration=0.2)
+    print(frames)
+    print(np.min(frames[0]))
+    
     # optimized_trimesh = trimesh.Trimesh(vertices=final_mesh.verts_packed().detach().numpy(), faces=final_mesh.faces_packed().detach().numpy())
     # mesh.show()
     # final_mesh.show()

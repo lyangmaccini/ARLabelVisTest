@@ -214,20 +214,26 @@ class ColorSpaceTorchOptimizer:
             loss.backward()
             self.optimizer.step()
 
-            if i % 300 == 0:
+            if i % 10 == 0:
                 print("iteration:")
                 print(i)
                 print("loss:")
                 print(loss.item())
                 v = (self.vertices + self.deform_verts).detach().cpu().numpy()
                 intermediate_mesh = trimesh.Trimesh(vertices=v, faces=self.faces.detach().cpu().numpy())
-                curvature = trimesh.curvature.discrete_gaussian_curvature_measure(intermediate_mesh, v, 1.0)
+                curvature = np.array(trimesh.curvature.discrete_gaussian_curvature_measure(intermediate_mesh, v, 1.0))
+                low, high = np.percentile(curvature, [1, 99])
+                
                 colors = []
+                ma = np.max((curvature))
+                mi = np.min((curvature))
                 for c in curvature:
-                    c = abs(c)
-                    color = [(c), c, c, 1.0]
+                    # c = abs(c) / (1.0 + abs(c))
+                    c = (c  - mi) / (ma - mi)
+                    color = [c, c, c, 1.0]
                     colors.append(color)
                 colors = np.array(colors)
+                # print(np.max(np.array(curvature)))
                 intermediate_mesh.visual.vertex_colors = colors 
                 self.intermediate_meshes.append(intermediate_mesh)
 
