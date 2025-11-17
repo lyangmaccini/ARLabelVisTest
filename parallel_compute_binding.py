@@ -131,7 +131,7 @@ def main():
     intermediate_meshes = optimizer.getIntermediateMeshes()
     scene.add_geometry(intermediate_meshes[0])
     # scene.show()
-    viewer = scene.show()
+    # viewer = scene.show()
     # print(viewer)
     # while not viewer.is_active:
         # time.sleep(0.1)
@@ -143,16 +143,92 @@ def main():
     #     print("hello")
         # scene.show()
     frames = []
-    r = trimesh.transformations.rotation_matrix(np.pi/2.0, [0, 1, 0])
+    quarter_frames = []
+    half_frames = []
+    three_quarter_frames = []
+    r_quarter = trimesh.transformations.rotation_matrix(np.pi/2.0, [0, 1, 0])
+    r_half = trimesh.transformations.rotation_matrix(7.0 * np.pi / 6.0, [0, 1, 0])
+    r_three_quarter = trimesh.transformations.rotation_matrix(3.0*np.pi/2.0, [0, 1, 0])
+    # for mesh in intermediate_meshes:
+    #     s = trimesh.Scene(mesh)
+    #     png = s.save_image(resolution=[800,800], visible=True)
+    #     frames.append(np.array(Image.open(io.BytesIO(png))))
+
+        # print("2")
+        # s = trimesh.Scene(mesh)
+        # s.apply_transform(r_quarter)
+        # png = s.save_image(resolution=[800,800], visible=True)
+        # quarter_frames.append(np.array(Image.open(io.BytesIO(png))))
+
+        # print("3")
+        # s = trimesh.Scene(mesh)
+        # s.apply_transform(r_half)
+        # png = s.save_image(resolution=[800,800], visible=True)
+        # half_frames.append(np.array(Image.open(io.BytesIO(png))))
+
+        # s = trimesh.Scene(mesh)
+        # s.apply_transform(r_three_quarter)
+        # png = s.save_image(resolution=[800,800], visible=True)
+        # three_quarter_frames.append(np.array(Image.open(io.BytesIO(png))))
+
     for mesh in intermediate_meshes:
+        # print("1")
+        # s = trimesh.Scene(mesh)
+        # png = s.save_image(resolution=[800,800], visible=True)
+        # frames.append(np.array(Image.open(io.BytesIO(png))))
+
+        # print("2")
         s = trimesh.Scene(mesh)
-        s.apply_transform(r)
+        s.apply_transform(r_quarter)
         png = s.save_image(resolution=[800,800], visible=True)
-        # Image.open(io.BytesIO(png)).show()
-        frames.append(np.array(Image.open(io.BytesIO(png))))
-    imageio.mimsave("energy.gif", frames, duration=0.2)
-    print(frames)
-    print(np.min(frames[0]))
+        quarter_frames.append(np.array(Image.open(io.BytesIO(png))))
+
+        # print("3")
+        # s = trimesh.Scene(mesh)
+        # s.apply_transform(r_half)
+        # png = s.save_image(resolution=[800,800], visible=True)
+        # half_frames.append(np.array(Image.open(io.BytesIO(png))))
+
+        # s = trimesh.Scene(mesh)
+        # s.apply_transform(r_three_quarter)
+        # png = s.save_image(resolution=[800,800], visible=True)
+        # three_quarter_frames.append(np.array(Image.open(io.BytesIO(png))))
+
+    for mesh in intermediate_meshes:
+        # print("1")
+        # s = trimesh.Scene(mesh)
+        # png = s.save_image(resolution=[800,800], visible=True)
+        # frames.append(np.array(Image.open(io.BytesIO(png))))
+
+        # print("2")
+        # s = trimesh.Scene(mesh)
+        # s.apply_transform(r_quarter)
+        # png = s.save_image(resolution=[800,800], visible=True)
+        # quarter_frames.append(np.array(Image.open(io.BytesIO(png))))
+
+        # print("3")
+        s = trimesh.Scene(mesh)
+        s.apply_transform(r_half)
+        png = s.save_image(resolution=[800,800], visible=True)
+        half_frames.append(np.array(Image.open(io.BytesIO(png))))
+
+        # s = trimesh.Scene(mesh)
+        # s.apply_transform(r_three_quarter)
+        # png = s.save_image(resolution=[800,800], visible=True)
+        # three_quarter_frames.append(np.array(Image.open(io.BytesIO(png))))
+
+    for mesh in intermediate_meshes:
+
+        s = trimesh.Scene(mesh)
+        s.apply_transform(r_three_quarter)
+        png = s.save_image(resolution=[800,800], visible=True)
+        three_quarter_frames.append(np.array(Image.open(io.BytesIO(png))))
+    imageio.mimsave("energy_original.gif", frames, duration=0.2)
+    imageio.mimsave("energy_quarter.gif", quarter_frames, duration=0.2)
+    imageio.mimsave("energy_half.gif", half_frames, duration=0.2)
+    imageio.mimsave("energy_three_quarters.gif", three_quarter_frames, duration=0.2)
+    # print(frames)
+    # print(np.min(frames[0]))
     
     # optimized_trimesh = trimesh.Trimesh(vertices=final_mesh.verts_packed().detach().numpy(), faces=final_mesh.faces_packed().detach().numpy())
     # mesh.show()
