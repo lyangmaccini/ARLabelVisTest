@@ -13,6 +13,7 @@ import pyvista as pv
 # from binding import bindToMeshBinding
 # from voxels import convertToVoxels
 from mesh_optimization import pointsToMesh, ColorSpaceOptimizer, ColorSpaceTorchOptimizer
+from binding import bindToOptimizedMeshBinding
 import trimesh
 
 def RGBToLAB(RGB):
@@ -83,6 +84,7 @@ def main():
     final_mesh = optimizer.optimizeMesh()
 
     # optimized_trimesh = trimesh.Trimesh(vertices=final_mesh.verts_packed().detach().numpy(), faces=final_mesh.faces_packed().detach().numpy())
+    # mesh.show()
     final_mesh.show()
     # Voxelizing mesh: neural binding requires a voxelized point cloud. When we run the neural binding code, it automatically
     # saves a .binvox file as testNeuralBounding_<dims>.binvox to finish the mapping on.
@@ -113,59 +115,60 @@ def main():
     #         arr = np.insert(face, 0, 3)
     #         new_faces.append(arr)
     #     faces = np.hstack(new_faces) 
+    vertices = final_mesh.vertices
+    faces = final_mesh.faces
+    # mesh = pv.PolyData(vertices, faces)
+    print("subdividing")
+    # mesh.subdivide(1, subfilter='loop', inplace=True)
+    # verts = mesh.points # in voxel space
 
-    #     mesh = pv.PolyData(verts, faces)
-    #     print("subdividing")
-    #     # mesh.subdivide(1, subfilter='loop', inplace=True)
-    #     verts = mesh.points # in voxel space
+    # x_max, y_max, z_max = np.max(allLABs, axis=0)
+    # x_min, y_min, z_min = np.min(allLABs, axis=0)
+    # max_range = 1.1 * max([x_max - x_min, y_max - y_min, z_max - z_min])
 
-    #     x_max, y_max, z_max = np.max(allLABs, axis=0)
-    #     x_min, y_min, z_min = np.min(allLABs, axis=0)
-    #     max_range = 1.1 * max([x_max - x_min, y_max - y_min, z_max - z_min])
+    # for i in range(len(verts)):
+    #     new_x = max_range * verts[i][0] / dim
+    #     new_y = max_range * verts[i][1] / dim
+    #     new_z = max_range * verts[i][2] / dim
 
-    #     for i in range(len(verts)):
-    #         new_x = max_range * verts[i][0] / dim
-    #         new_y = max_range * verts[i][1] / dim
-    #         new_z = max_range * verts[i][2] / dim
+    #     new_x += x_min
+    #     new_y += y_min
+    #     new_z += z_min
 
-    #         new_x += x_min
-    #         new_y += y_min
-    #         new_z += z_min
-
-    #         verts[i] = [new_x, new_y, new_z]
+    #     verts[i] = [new_x, new_y, new_z]
     
     #     # for visualization (mesh):
-    #     # fig = plt.figure()
-    #     # ax = fig.add_subplot(111, projection='3d')
-    #     # ax.scatter(verts[:,0], verts[:,1], verts[:,2], c = "blue", alpha=0.5)
-    #     # ax.set_xlim([-2, 35])   # Set x-axis limits
-    #     # ax.set_ylim([-2, 35])   # Set y-axis limits
-    #     # ax.set_zlim([-2, 35])   # Set z-axis limits
-    #     # ax.set_box_aspect([1.0, 1.0, 1.0])
-    #     # ax.set_xlabel("L")
-    #     # ax.set_ylabel("a")
-    #     # ax.set_zlabel("b")
-    #     # ax.set_title("Mesh Surface Plot")
-    #     # plt.show()
+    #     fig = plt.figure()
+    #     ax = fig.add_subplot(111, projection='3d')
+    #     ax.scatter(verts[:,0], verts[:,1], verts[:,2], c = "blue", alpha=0.5)
+    #     ax.set_xlim([-2, 35])   # Set x-axis limits
+    #     ax.set_ylim([-2, 35])   # Set y-axis limits
+    #     ax.set_zlim([-2, 35])   # Set z-axis limits
+    #     ax.set_box_aspect([1.0, 1.0, 1.0])
+    #     ax.set_xlabel("L")
+    #     ax.set_ylabel("a")
+    #     ax.set_zlabel("b")
+    #     ax.set_title("Mesh Surface Plot")
+    #     plt.show()
 
     #     # Map all points to smoothed mesh:
     #     print("binding")
-    #     boundedLABs = bindToMeshBinding(verts, allLABs, voxels, dim)
-    #     # boundedLABs = allLABs
+    boundedLABs = bindToOptimizedMeshBinding(final_mesh, allLABs)
+    # boundedLABs = allLABs
 
-    #     # For visualization (bounded LABs):
-    #     fig = plt.figure()
-    #     ax = fig.add_subplot(111, projection='3d')
-    #     ax.scatter(boundedLABs[:,2], boundedLABs[:,1], boundedLABs[:,0], c = allRGB/255.0, alpha=0.15)
-    #     ax.set_xlim([-100, 100]) 
-    #     ax.set_ylim([-100, 100])  
-    #     ax.set_zlim([-100, 100])  
-    #     ax.set_box_aspect([1.0, 1.0, 1.0])
-    #     ax.set_xlabel("b")
-    #     ax.set_ylabel("a")
-    #     ax.set_zlabel("L")
-    #     # ax.set_title("Bounded LABs Surface Plot")
-    #     plt.show()
+    # For visualization (bounded LABs):
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    ax.scatter(boundedLABs[:,2], boundedLABs[:,1], boundedLABs[:,0], c = allRGB/255.0, alpha=0.15)
+    ax.set_xlim([-100, 100]) 
+    ax.set_ylim([-100, 100])  
+    ax.set_zlim([-100, 100])  
+    ax.set_box_aspect([1.0, 1.0, 1.0])
+    ax.set_xlabel("b")
+    ax.set_ylabel("a")
+    ax.set_zlabel("L")
+    # ax.set_title("Bounded LABs Surface Plot")
+    plt.show()
 
     #     print("number allLAB", len(allLABs))
     #     print("number boundedLABs", len(boundedLABs))
