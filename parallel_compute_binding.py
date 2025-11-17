@@ -15,6 +15,9 @@ import pyvista as pv
 from mesh_optimization import pointsToMesh, ColorSpaceOptimizer, ColorSpaceTorchOptimizer
 from binding import bindToOptimizedMeshBinding
 import trimesh
+import math
+from trimesh.viewer import SceneViewer
+import time
 
 def RGBToLAB(RGB):
     RGB = np.array(RGB) / 255.0
@@ -77,15 +80,68 @@ def main():
     print(allLABs.shape)
     print("labs ready")
 
+    def dist(p1, p2):
+        return math.sqrt((p1[0]-p2[0]) ** 2 + (p1[1]-p2[1]) ** 2 + (p1[2]-p2[2]) ** 2)
+
     mesh = pointsToMesh(allLABs)
+    colors = []
+    for vert in mesh.vertices:
+        best_idx = 0
+        best_distance = dist(vert, allLABs[0])
+        for i, lab in enumerate(allLABs):
+            distance = dist(vert, lab)
+            if distance < best_distance:
+                best_idx = i
+                best_distance = distance
+        c = allRGB[best_idx]/255.0
+        color = [c[0], c[1], c[2], 1.0]
+        colors.append(color)
+    colors = np.array(colors)
+    print(colors.shape)
+    mesh.visual.vertex_colors = colors
+    print(mesh.visual.vertex_colors.shape)
+    print(allRGB.shape)
     # mesh.show()
     optimizer = ColorSpaceTorchOptimizer(mesh)
     print("hello")
     final_mesh = optimizer.optimizeMesh()
+    colors = []
+    for vert in final_mesh.vertices:
+        best_idx = 0
+        best_distance = dist(vert, allLABs[0])
+        for i, lab in enumerate(allLABs):
+            distance = dist(vert, lab)
+            if distance < best_distance:
+                best_idx = i
+                best_distance = distance
+        c = allRGB[best_idx]/255.0
+        color = [c[0], c[1], c[2], 1.0]
+        colors.append(color)
+    colors = np.array(colors)
+    final_mesh.visual.vertex_colors = colors 
 
+    scene = trimesh.Scene()
+    # scene.add_geometry(mesh)
+    # scene.add_geometry(final_mesh)
+    # scene.show()
+
+    intermediate_meshes = optimizer.getIntermediateMeshes()
+    scene.add_geometry(intermediate_meshes[0])
+    # scene.show()
+    viewer = scene.show()
+    print(viewer)
+    # while not viewer.is_active:
+        # time.sleep(0.1)
+    time.sleep(2)
+    for mesh in intermediate_meshes[1:]:
+        scene.geometry[list(scene.geometry.keys())[0]].vertices = mesh.vertices
+        viewer._redraw()
+        time.sleep(0.1)
+        print("hello")
+        # scene.show()
     # optimized_trimesh = trimesh.Trimesh(vertices=final_mesh.verts_packed().detach().numpy(), faces=final_mesh.faces_packed().detach().numpy())
     # mesh.show()
-    final_mesh.show()
+    # final_mesh.show()
     # Voxelizing mesh: neural binding requires a voxelized point cloud. When we run the neural binding code, it automatically
     # saves a .binvox file as testNeuralBounding_<dims>.binvox to finish the mapping on.
     # dim = 100
@@ -115,10 +171,10 @@ def main():
     #         arr = np.insert(face, 0, 3)
     #         new_faces.append(arr)
     #     faces = np.hstack(new_faces) 
-    vertices = final_mesh.vertices
-    faces = final_mesh.faces
+    # vertices = final_mesh.vertices
+    # faces = final_mesh.faces
     # mesh = pv.PolyData(vertices, faces)
-    print("subdividing")
+    # print("subdividing")
     # mesh.subdivide(1, subfilter='loop', inplace=True)
     # verts = mesh.points # in voxel space
 
@@ -153,22 +209,24 @@ def main():
 
     #     # Map all points to smoothed mesh:
     #     print("binding")
-    boundedLABs = bindToOptimizedMeshBinding(final_mesh, allLABs)
-    # boundedLABs = allLABs
 
-    # For visualization (bounded LABs):
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
-    ax.scatter(boundedLABs[:,2], boundedLABs[:,1], boundedLABs[:,0], c = allRGB/255.0, alpha=0.15)
-    ax.set_xlim([-100, 100]) 
-    ax.set_ylim([-100, 100])  
-    ax.set_zlim([-100, 100])  
-    ax.set_box_aspect([1.0, 1.0, 1.0])
-    ax.set_xlabel("b")
-    ax.set_ylabel("a")
-    ax.set_zlabel("L")
-    # ax.set_title("Bounded LABs Surface Plot")
-    plt.show()
+
+    # boundedLABs = bindToOptimizedMeshBinding(final_mesh, allLABs)
+    # # boundedLABs = allLABs
+
+    # # For visualization (bounded LABs):
+    # fig = plt.figure()
+    # ax = fig.add_subplot(111, projection='3d')
+    # ax.scatter(boundedLABs[:,2], boundedLABs[:,1], boundedLABs[:,0], c = allRGB/255.0, alpha=0.15)
+    # ax.set_xlim([-100, 100]) 
+    # ax.set_ylim([-100, 100])  
+    # ax.set_zlim([-100, 100])  
+    # ax.set_box_aspect([1.0, 1.0, 1.0])
+    # ax.set_xlabel("b")
+    # ax.set_ylabel("a")
+    # ax.set_zlabel("L")
+    # # ax.set_title("Bounded LABs Surface Plot")
+    # plt.show()
 
     #     print("number allLAB", len(allLABs))
     #     print("number boundedLABs", len(boundedLABs))
