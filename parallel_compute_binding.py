@@ -127,8 +127,8 @@ def main():
 
     scene = trimesh.Scene()
     # scene.add_geometry(mesh)
-    # scene.add_geometry(final_mesh)
-    # scene.show()
+    scene.add_geometry(final_mesh)
+    scene.show()
 
     intermediate_meshes = optimizer.getIntermediateMeshes()
     scene.add_geometry(intermediate_meshes[0])

@@ -119,7 +119,7 @@ class ColorSpaceTorchOptimizer:
         self.faces = torch.tensor(mesh.faces, dtype=torch.int64, device=device)
 
         self.original_vertices = torch.tensor(mesh.vertices, dtype=torch.float32, device=device)
-        self.iterations = 1000
+        self.iterations = 5000
 
         self.deform_verts = torch.zeros_like(self.vertices, device=device, requires_grad=True) 
         print(self.deform_verts.shape)
@@ -128,13 +128,13 @@ class ColorSpaceTorchOptimizer:
         self.optimizer = torch.optim.SGD([self.deform_verts], lr=1e-4, momentum=0.9, weight_decay=0.01)
         
         # Containment:
-        self.containment_weight = 20000.0
+        self.containment_weight = 0000.0
 
         # Curvature:
-        self.curvature_weight = 1000.0
+        self.curvature_weight = 3000.0
 
         # Volume:
-        self.volume_weight = 0.0001
+        self.volume_weight = 0.001
 
         self.intermediate_meshes = []
         self.curvatures = []
@@ -155,6 +155,24 @@ class ColorSpaceTorchOptimizer:
             vertex_angles = vertex_angles.index_add(0, faces[:, i], -mesh_angles[:, i])
         
         return vertex_angles
+    
+    def build_adjacency(self, num_vertices, faces):
+        neighbors = [[] for _ in range(num_vertices)]
+        for f in faces:
+            i, j, k = f
+            neighbors[i] += [j, k]
+            neighbors[j] += [i, k]
+            neighbors[k] += [i, j]
+        return neighbors
+
+    def laplacian_loss(self, V, neighbors):
+        loss = 0.0
+        for i, nbrs in enumerate(neighbors):
+            if len(nbrs) == 0:
+                continue
+            mean_neighbor = V[nbrs].mean(dim=0)
+            loss += torch.sum((V[i] - mean_neighbor) ** 2)
+        return loss / len(neighbors)
 
     def containment(self, vertices, faces):
         verts = torch.unsqueeze(vertices, dim=0)
@@ -166,16 +184,19 @@ class ColorSpaceTorchOptimizer:
         # print(c)
         return c
     
-    def curvature(self, vertices, faces):
+    def curvature(self, vertices, faces, neighbors):
         # laplacian_loss = mesh_laplacian_smoothing(mesh, method="uniform")
         # edge_loss = mesh_edge_loss(mesh)
         # normal_loss = mesh_normal_consistency(mesh)
         # curve = 0.1 * laplacian_loss + edge_loss + 0.01 * normal_loss
         # print("curve")
         # print(curve)
-
-
-        c = torch.sum(self.gaussian_curvature(vertices, faces) ** 2)
+        threshold = 0.015
+        curvature = self.gaussian_curvature(vertices, faces)
+        # print(torch.max(curvature))
+        outliers = (curvature > threshold).float().sum().item()
+        # print(outliers)
+        c = torch.sum(curvature ** 2)
         # print("cur")
         # print(c)
         # smoothed_verts = kal.metrics.trianglemesh.uniform_laplacian_smoothing(torch.unsqueeze(vertices, dim=1), faces)[0]
@@ -183,7 +204,8 @@ class ColorSpaceTorchOptimizer:
         # c = distances.sum()
         # print("curve")
         # print(c)
-        return c
+        return c + outliers
+        # return self.laplacian_loss(vertices, neighbors)
             
     def volume(self, vertices, faces):
         vol = meshVolume(vertices,faces)
@@ -192,16 +214,17 @@ class ColorSpaceTorchOptimizer:
         # print(vol)
         return -vol
     
-    def loss_fn(self, vertices, faces):
-        return self.containment_weight * self.containment(vertices, faces) + self.curvature_weight * self.curvature(vertices, faces) + self.volume_weight * self.volume(vertices, faces)
+    def loss_fn(self, vertices, faces, neighbors):
+        return self.containment_weight * self.containment(vertices, faces) + self.curvature_weight * self.curvature(vertices, faces, neighbors) + self.volume_weight * self.volume(vertices, faces)
         # return self.containment_weight* self.containment(vertices, faces)
         # return self.curvature_weight * self.curvature(vertices, faces) + self.containment_weight * self.containment(vertices, faces)
     
     def optimizeMesh(self):
+        neighbors = self.build_adjacency(len(self.vertices), self.faces.tolist())
         for i in tqdm(range(self.iterations)):
             self.optimizer.zero_grad()
             new_vertices = self.vertices + self.deform_verts
-            loss = self.loss_fn(new_vertices, self.faces)
+            loss = self.loss_fn(new_vertices, self.faces, neighbors)
             loss.backward()
             self.optimizer.step()
 
