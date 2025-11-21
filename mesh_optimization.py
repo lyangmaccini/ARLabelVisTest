@@ -119,7 +119,7 @@ class ColorSpaceTorchOptimizer:
         self.faces = torch.tensor(mesh.faces, dtype=torch.int64, device=device)
 
         self.original_vertices = torch.tensor(mesh.vertices, dtype=torch.float32, device=device)
-        self.iterations = 2000
+        self.iterations = 1000
 
         self.deform_verts = torch.zeros_like(self.vertices, device=device, requires_grad=True) 
         print(self.deform_verts.shape)
@@ -128,15 +128,16 @@ class ColorSpaceTorchOptimizer:
         self.optimizer = torch.optim.SGD([self.deform_verts], lr=1e-4, momentum=0.9, weight_decay=0.01)
         
         # Containment:
-        self.containment_weight = 40000.0
+        self.containment_weight = 20000.0
 
         # Curvature:
-        self.curvature_weight = 2000.0
+        self.curvature_weight = 1000.0
 
         # Volume:
-        self.volume_weight = 0.001
+        self.volume_weight = 0.0001
 
         self.intermediate_meshes = []
+        self.curvatures = []
 
     def gaussian_curvature(self, vertices: torch.Tensor, faces: torch.Tensor):
         v0 = vertices[faces[:, 0]]
@@ -212,24 +213,38 @@ class ColorSpaceTorchOptimizer:
                 v = (self.vertices + self.deform_verts).detach().cpu().numpy()
                 intermediate_mesh = trimesh.Trimesh(vertices=v, faces=self.faces.detach().cpu().numpy())
                 curvature = np.array(np.abs(trimesh.curvature.discrete_gaussian_curvature_measure(intermediate_mesh, v, 1.0)))            
-                colors = []
-                ma = np.max(curvature)
-                mi = np.min(curvature)
-                for c in curvature:
-                    c = (c) / (1.0 + (c))
-                    c = (c  - mi) / (ma - mi)
-                    color = [c, c, c, 1.0]
-                    colors.append(color)
-                colors = np.array(colors)
-                # print(np.max(np.array(curvature)))
-                intermediate_mesh.visual.vertex_colors = colors 
+                self.curvatures.append(curvature)
                 self.intermediate_meshes.append(intermediate_mesh)
 
         final_mesh = trimesh.Trimesh(vertices=(self.vertices + self.deform_verts).detach().cpu().numpy(), faces=self.faces.detach().cpu().numpy())
         return final_mesh
     
     def getIntermediateMeshes(self):
+        curvature_min = np.min(np.array(self.curvatures))
+        curvature_max = np.max(np.array(self.curvatures))
+        print(curvature_min)
+        print(curvature_max)
+        
+        percentile5 = np.percentile(np.array(self.curvatures), 25)
+        print(percentile5)
+
+        gamma = 0.3
+        for mesh, curvature in zip(self.intermediate_meshes, self.curvatures):
+            colors = []
+            for c in curvature:
+                # c = c / (1.0 + c)
+                # if c < percentile5:
+                # c = curvature_min
+                c = (c - curvature_min) / (curvature_max - curvature_min)
+                c = c ** gamma
+                color = [c, c, c, 1.0]
+                # print(c)
+                colors.append(color)
+            mesh.visual.vertex_colors = np.array(colors)
+            # print(colors)
         return self.intermediate_meshes
+    
+
 
     
 

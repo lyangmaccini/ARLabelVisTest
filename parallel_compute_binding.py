@@ -142,29 +142,41 @@ def main():
     r_half = trimesh.transformations.rotation_matrix(np.pi, [0, 1, 0])
     r_three_quarter = trimesh.transformations.rotation_matrix(3.0*np.pi/2.0, [0, 1, 0])
     for mesh in intermediate_meshes:
-        s1 = trimesh.Scene(trimesh.Trimesh(vertices=mesh.vertices.copy(), faces=mesh.faces.copy()))
-        png1 = s1.save_image(resolution=[800,800], visible=True)
-        frames.append(np.array(Image.open(io.BytesIO(png1))))
+        try:
+            t1 = trimesh.Trimesh(vertices=mesh.vertices.copy(), faces=mesh.faces.copy())
+            t1.visual.vertex_colors = mesh.visual.vertex_colors
+            s1 = trimesh.Scene(t1)
+            png1 = s1.save_image(resolution=[800,800], visible=True)
+            frames.append(np.array(Image.open(io.BytesIO(png1))))
 
-        s2 = trimesh.Scene(trimesh.Trimesh(vertices=mesh.vertices.copy(), faces=mesh.faces.copy()))
-        s2.apply_transform(r_quarter)
-        png2 = s2.save_image(resolution=[800,800], visible=True)
-        quarter_frames.append(np.array(Image.open(io.BytesIO(png2))))
+            t2 = trimesh.Trimesh(vertices=mesh.vertices.copy(), faces=mesh.faces.copy())
+            t2.visual.vertex_colors = mesh.visual.vertex_colors
+            s2 = trimesh.Scene(t2)
+            s2.apply_transform(r_quarter)
+            png2 = s2.save_image(resolution=[800,800], visible=True)
+            quarter_frames.append(np.array(Image.open(io.BytesIO(png2))))
 
-        s3 = trimesh.Scene(trimesh.Trimesh(vertices=mesh.vertices.copy(), faces=mesh.faces.copy()))
-        s3.apply_transform(r_half)
-        png3 = s3.save_image(resolution=[800,800], visible=True)
-        half_frames.append(np.array(Image.open(io.BytesIO(png3))))
+            t3 = trimesh.Trimesh(vertices=mesh.vertices.copy(), faces=mesh.faces.copy())
+            t3.visual.vertex_colors = mesh.visual.vertex_colors
+            s3 = trimesh.Scene(t3)
+            s3.apply_transform(r_half)
+            png3 = s3.save_image(resolution=[800,800], visible=True)
+            half_frames.append(np.array(Image.open(io.BytesIO(png3))))
 
-        s4 = trimesh.Scene(trimesh.Trimesh(vertices=mesh.vertices.copy(), faces=mesh.faces.copy()))
-        s4.apply_transform(r_three_quarter)
-        png4 = s4.save_image(resolution=[800,800], visible=True)
-        three_quarter_frames.append(np.array(Image.open(io.BytesIO(png4))))
+            t4 = trimesh.Trimesh(vertices=mesh.vertices.copy(), faces=mesh.faces.copy())
+            t4.visual.vertex_colors = mesh.visual.vertex_colors
+            s4 = trimesh.Scene(t4)
+            s4.apply_transform(r_three_quarter)
+            png4 = s4.save_image(resolution=[800,800], visible=True)
+            three_quarter_frames.append(np.array(Image.open(io.BytesIO(png4))))
+        except ZeroDivisionError:
+            print("zero divide")
 
-    imageio.mimsave("energy_original.gif", frames, duration=0.2)
-    imageio.mimsave("energy_quarter.gif", quarter_frames, duration=0.2)
-    imageio.mimsave("energy_half.gif", half_frames, duration=0.2)
-    imageio.mimsave("energy_three_quarters.gif", three_quarter_frames, duration=0.2)
+    imageio.mimsave("energy_0.gif", frames, duration=0.2)
+    imageio.mimsave("energy_90.gif", quarter_frames, duration=0.2)
+    imageio.mimsave("energy_180.gif", half_frames, duration=0.2)
+    imageio.mimsave("energy_270.gif", three_quarter_frames, duration=0.2)
+    print("saved all views")
 
 
 if __name__ == "__main__":
