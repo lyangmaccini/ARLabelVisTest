@@ -7,6 +7,9 @@ from scipy.optimize import minimize
 import kaolin as kal
 
 # torch version: torch-2.5.1 + cu118
+import kaolin as kal
+
+# torch version: torch-2.5.1 + cu118
 
 def pointsToMesh(allLABs):
     # Converts given points to a trimesh
@@ -36,7 +39,14 @@ def meshVolume(vertices: torch.Tensor, faces: torch.Tensor):
     v1 = vertices[faces[:, 1]]
     v2 = vertices[faces[:, 2]]
     volume = torch.sum(v0 * torch.cross(v1, v2, dim=1)) / 6.0
+    volume = torch.sum(v0 * torch.cross(v1, v2, dim=1)) / 6.0
     return torch.abs(volume)
+
+def triangleAngles(opposites, left, right):
+    cos = (left**2 + right**2 - opposites**2) / (2 * left * right)
+    return torch.acos(cos.clamp(-1.0, 1.0))
+
+
 
 def triangleAngles(opposites, left, right):
     cos = (left**2 + right**2 - opposites**2) / (2 * left * right)
@@ -119,25 +129,25 @@ class ColorSpaceTorchOptimizer:
         self.faces = torch.tensor(mesh.faces, dtype=torch.int64, device=device)
 
         self.original_vertices = torch.tensor(mesh.vertices, dtype=torch.float32, device=device)
-        self.iterations = 100
+        self.iterations = 5000
 
         self.deform_verts = torch.zeros_like(self.vertices, device=device, requires_grad=True) 
-        self.optimizer = torch.optim.SGD([self.deform_verts], lr=1e-3, momentum=0.9)
-        # self.original_mesh = mesh.copy()
-        print("original volume:")
-        # print(self.original_mesh.volume)
-        print(meshVolume(self.vertices, self.faces))
-        print("cuda:")
-        print(torch.cuda.is_available())
+        print(self.deform_verts.shape)
+        # with torch.no_grad():
+            # self.deform_verts[:, 0] = 25
+        self.optimizer = torch.optim.SGD([self.deform_verts], lr=1e-4, momentum=0.9, weight_decay=0.01)
         
         # Containment:
-        self.containment_weight = 1000000.0
+        self.containment_weight = 0000.0
 
         # Curvature:
-        self.curvature_weight = 50000.0
+        self.curvature_weight = 3000.0
 
         # Volume:
-        self.volume_weight = 0.0000001
+        self.volume_weight = 0.001
+
+        self.intermediate_meshes = []
+        self.curvatures = []
 
     def gaussian_curvature(self, vertices: torch.Tensor, faces: torch.Tensor):
         v0 = vertices[faces[:, 0]]
@@ -155,10 +165,26 @@ class ColorSpaceTorchOptimizer:
             vertex_angles = vertex_angles.index_add(0, faces[:, i], -mesh_angles[:, i])
         
         return vertex_angles
+    
+    def build_adjacency(self, num_vertices, faces):
+        neighbors = [[] for _ in range(num_vertices)]
+        for f in faces:
+            i, j, k = f
+            neighbors[i] += [j, k]
+            neighbors[j] += [i, k]
+            neighbors[k] += [i, j]
+        return neighbors
+
+    def laplacian_loss(self, V, neighbors):
+        loss = 0.0
+        for i, nbrs in enumerate(neighbors):
+            if len(nbrs) == 0:
+                continue
+            mean_neighbor = V[nbrs].mean(dim=0)
+            loss += torch.sum((V[i] - mean_neighbor) ** 2)
+        return loss / len(neighbors)
 
     def containment(self, vertices, faces):
-        # print(self.original_vertices.shape)
-        # print(vertices.shape)
         verts = torch.unsqueeze(vertices, dim=0)
         original_verts = torch.unsqueeze(self.original_vertices, dim=0)
         distances, _, _ = kal.metrics.trianglemesh.point_to_mesh_distance(verts, kal.ops.mesh.index_vertices_by_faces(original_verts, faces))
@@ -168,17 +194,28 @@ class ColorSpaceTorchOptimizer:
         # print(c)
         return c
     
-    def curvature(self, vertices, faces):
+    def curvature(self, vertices, faces, neighbors):
         # laplacian_loss = mesh_laplacian_smoothing(mesh, method="uniform")
         # edge_loss = mesh_edge_loss(mesh)
         # normal_loss = mesh_normal_consistency(mesh)
         # curve = 0.1 * laplacian_loss + edge_loss + 0.01 * normal_loss
         # print("curve")
         # print(curve)
-        c = torch.mean(self.gaussian_curvature(vertices, faces) ** 2)
+        threshold = 0.015
+        curvature = self.gaussian_curvature(vertices, faces)
+        # print(torch.max(curvature))
+        outliers = (curvature > threshold).float().sum().item()
+        # print(outliers)
+        c = torch.sum(curvature ** 2)
         # print("cur")
         # print(c)
-        return c
+        # smoothed_verts = kal.metrics.trianglemesh.uniform_laplacian_smoothing(torch.unsqueeze(vertices, dim=1), faces)[0]
+        # distances = torch.norm(vertices - smoothed_verts, dim=1)
+        # c = distances.sum()
+        # print("curve")
+        # print(c)
+        return c + outliers
+        # return self.laplacian_loss(vertices, neighbors)
             
     def volume(self, vertices, faces):
         vol = meshVolume(vertices,faces)
@@ -187,17 +224,18 @@ class ColorSpaceTorchOptimizer:
         # print(vol)
         return -vol
     
-    def loss_fn(self, vertices, faces):
-        return self.containment_weight * self.containment(vertices, faces) + self.curvature_weight * self.curvature(vertices, faces) + self.volume_weight * self.volume(vertices, faces)
-        # return self.containment(vertices, faces)
+    def loss_fn(self, vertices, faces, neighbors):
+        return self.containment_weight * self.containment(vertices, faces) + self.curvature_weight * self.curvature(vertices, faces, neighbors) + self.volume_weight * self.volume(vertices, faces)
+        # return self.containment_weight* self.containment(vertices, faces)
+        # return self.curvature_weight * self.curvature(vertices, faces) + self.containment_weight * self.containment(vertices, faces)
     
     def optimizeMesh(self):
+        neighbors = self.build_adjacency(len(self.vertices), self.faces.tolist())
         for i in tqdm(range(self.iterations)):
             
             self.optimizer.zero_grad()
-            # new_mesh = kal.rep.SurfaceMesh(vertices=self.vertices + self.deform_verts, faces=self.faces)
             new_vertices = self.vertices + self.deform_verts
-            loss = self.loss_fn(new_vertices, self.faces)
+            loss = self.loss_fn(new_vertices, self.faces, neighbors)
             loss.backward()
             self.optimizer.step()
 
@@ -206,9 +244,41 @@ class ColorSpaceTorchOptimizer:
                 print(i)
                 print("loss:")
                 print(loss.item())
+                v = (self.vertices + self.deform_verts).detach().cpu().numpy()
+                intermediate_mesh = trimesh.Trimesh(vertices=v, faces=self.faces.detach().cpu().numpy())
+                curvature = np.array(np.abs(trimesh.curvature.discrete_gaussian_curvature_measure(intermediate_mesh, v, 1.0)))            
+                self.curvatures.append(curvature)
+                self.intermediate_meshes.append(intermediate_mesh)
 
         final_mesh = trimesh.Trimesh(vertices=(self.vertices + self.deform_verts).detach().cpu().numpy(), faces=self.faces.detach().cpu().numpy())
         return final_mesh
+    
+    def getIntermediateMeshes(self):
+        curvature_min = np.min(np.array(self.curvatures))
+        curvature_max = np.max(np.array(self.curvatures))
+        print(curvature_min)
+        print(curvature_max)
+        
+        percentile5 = np.percentile(np.array(self.curvatures), 25)
+        print(percentile5)
+
+        gamma = 0.3
+        for mesh, curvature in zip(self.intermediate_meshes, self.curvatures):
+            colors = []
+            for c in curvature:
+                # c = c / (1.0 + c)
+                # if c < percentile5:
+                # c = curvature_min
+                c = (c - curvature_min) / (curvature_max - curvature_min)
+                c = c ** gamma
+                color = [c, c, c, 1.0]
+                # print(c)
+                colors.append(color)
+            mesh.visual.vertex_colors = np.array(colors)
+            # print(colors)
+        return self.intermediate_meshes
+    
+
 
     
 

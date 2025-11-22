@@ -15,6 +15,12 @@ import pyvista as pv
 from mesh_optimization import pointsToMesh, ColorSpaceOptimizer, ColorSpaceTorchOptimizer
 from binding import bindToOptimizedMeshBinding
 import trimesh
+import math
+from trimesh.viewer import SceneViewer
+import time
+import imageio
+from PIL import Image
+import io
 
 def RGBToLAB(RGB):
     RGB = np.array(RGB) / 255.0
@@ -60,6 +66,39 @@ def process_colors(rgb_range, allLABs):
     print('finished generating all candidateLABs')
     return CandidateLABs, CandidateRGBs
 
+def save_single_view(mesh, rotation_matrix, filename):
+    s = trimesh.Scene(trimesh.Trimesh(vertices=mesh.vertices.copy(), faces=mesh.faces.copy()))
+    s.apply_transform(rotation_matrix)
+    png2 = s.save_image(resolution=[800,800], visible=True)
+    Image.open(io.BytesIO(png2)).save(filename + ".png")
+
+def save_views(mesh: trimesh.Trimesh):
+    r_quarter = trimesh.transformations.rotation_matrix(np.pi/2.0, [0, 1, 0])
+    r_half = trimesh.transformations.rotation_matrix(np.pi, [0, 1, 0])
+    r_three_quarter = trimesh.transformations.rotation_matrix(3.0*np.pi/2.0, [0, 1, 0])
+
+    save_single_view(mesh, r_quarter, "quarter_view")
+    save_single_view(mesh, r_half, "half_view")
+    save_single_view(mesh, r_three_quarter, "three_quarter_view")
+
+def dist(p1, p2):
+    return math.sqrt((p1[0]-p2[0]) ** 2 + (p1[1]-p2[1]) ** 2 + (p1[2]-p2[2]) ** 2)
+
+def get_mesh_vertex_colors(mesh, allLABs, allRGB):
+    colors = []
+    for vert in mesh.vertices:
+        best_idx = 0
+        best_distance = dist(vert, allLABs[0])
+        for i, lab in enumerate(allLABs):
+            distance = dist(vert, lab)
+            if distance < best_distance:
+                best_idx = i
+                best_distance = distance
+        c = allRGB[best_idx]/255.0
+        color = [c[0], c[1], c[2], 1.0]
+        colors.append(color)
+    return np.array(colors)
+
 def main():
     num_cpus = os.cpu_count() 
     n_processes = num_cpus - 4 # Change this to use more/less CPUs. 
@@ -78,119 +117,66 @@ def main():
     print("labs ready")
 
     mesh = pointsToMesh(allLABs)
+    mesh.visual.vertex_colors = get_mesh_vertex_colors(mesh, allLABs, allRGB)
+    save_views(mesh)
     # mesh.show()
+
     optimizer = ColorSpaceTorchOptimizer(mesh)
-    print("hello")
     final_mesh = optimizer.optimizeMesh()
+    final_mesh.visual.vertex_colors = get_mesh_vertex_colors(final_mesh, allLABs, allRGB) 
 
-    # optimized_trimesh = trimesh.Trimesh(vertices=final_mesh.verts_packed().detach().numpy(), faces=final_mesh.faces_packed().detach().numpy())
-    # mesh.show()
-    final_mesh.show()
-    # Voxelizing mesh: neural binding requires a voxelized point cloud. When we run the neural binding code, it automatically
-    # saves a .binvox file as testNeuralBounding_<dims>.binvox to finish the mapping on.
-    # dim = 100
-    # write = False
-    # if write:
-    #     voxels = convertToVoxels(allLABs, dim)
-    #     v = binvox_rw.Voxels(voxels, [dim, dim, dim], [0.0, 0.0, 0.0], 1.0, 'xyz')
-    #     filepath = "allLABs" + str(dim) + ".binvox"
-    #     with open(filepath, 'w', encoding="latin-1") as fp:
-    #         binvox_rw.write(v, fp)
-    #     print("Saved to file " + filepath)
+    scene = trimesh.Scene()
+    # scene.add_geometry(mesh)
+    scene.add_geometry(final_mesh)
+    scene.show()
 
-    # Processing post-neural-bounding voxels of color space:
-    # read = True
-    # if read:
-    #     print("opening file")
-    #     filepath = "testNeuralBounding_" + str(dim) + ".binvox"
-    #     voxels = np.zeros((dim, dim, dim))
-    #     with open(filepath, "rb") as fp:
-    #         voxels = binvox_rw.read_as_3d_array(fp).data
+    intermediate_meshes = optimizer.getIntermediateMeshes()
+    scene.add_geometry(intermediate_meshes[0])
+    # scene.show()
 
-    #     # More smoothing; convert to triangle mesh
-    #     print("meshing")
-    #     verts, faces, _, _ = measure.marching_cubes(voxels, 0.0)
-    #     new_faces = []
-    #     for face in faces:
-    #         arr = np.insert(face, 0, 3)
-    #         new_faces.append(arr)
-    #     faces = np.hstack(new_faces) 
-    vertices = final_mesh.vertices
-    faces = final_mesh.faces
-    # mesh = pv.PolyData(vertices, faces)
-    print("subdividing")
-    # mesh.subdivide(1, subfilter='loop', inplace=True)
-    # verts = mesh.points # in voxel space
+    frames = []
+    quarter_frames = []
+    half_frames = []
+    three_quarter_frames = []
+    r_quarter = trimesh.transformations.rotation_matrix(np.pi/2.0, [0, 1, 0])
+    r_half = trimesh.transformations.rotation_matrix(np.pi, [0, 1, 0])
+    r_three_quarter = trimesh.transformations.rotation_matrix(3.0*np.pi/2.0, [0, 1, 0])
+    for mesh in intermediate_meshes:
+        try:
+            t1 = trimesh.Trimesh(vertices=mesh.vertices.copy(), faces=mesh.faces.copy())
+            t1.visual.vertex_colors = mesh.visual.vertex_colors
+            s1 = trimesh.Scene(t1)
+            png1 = s1.save_image(resolution=[800,800], visible=True)
+            frames.append(np.array(Image.open(io.BytesIO(png1))))
 
-    # x_max, y_max, z_max = np.max(allLABs, axis=0)
-    # x_min, y_min, z_min = np.min(allLABs, axis=0)
-    # max_range = 1.1 * max([x_max - x_min, y_max - y_min, z_max - z_min])
+            t2 = trimesh.Trimesh(vertices=mesh.vertices.copy(), faces=mesh.faces.copy())
+            t2.visual.vertex_colors = mesh.visual.vertex_colors
+            s2 = trimesh.Scene(t2)
+            s2.apply_transform(r_quarter)
+            png2 = s2.save_image(resolution=[800,800], visible=True)
+            quarter_frames.append(np.array(Image.open(io.BytesIO(png2))))
 
-    # for i in range(len(verts)):
-    #     new_x = max_range * verts[i][0] / dim
-    #     new_y = max_range * verts[i][1] / dim
-    #     new_z = max_range * verts[i][2] / dim
+            t3 = trimesh.Trimesh(vertices=mesh.vertices.copy(), faces=mesh.faces.copy())
+            t3.visual.vertex_colors = mesh.visual.vertex_colors
+            s3 = trimesh.Scene(t3)
+            s3.apply_transform(r_half)
+            png3 = s3.save_image(resolution=[800,800], visible=True)
+            half_frames.append(np.array(Image.open(io.BytesIO(png3))))
 
-    #     new_x += x_min
-    #     new_y += y_min
-    #     new_z += z_min
+            t4 = trimesh.Trimesh(vertices=mesh.vertices.copy(), faces=mesh.faces.copy())
+            t4.visual.vertex_colors = mesh.visual.vertex_colors
+            s4 = trimesh.Scene(t4)
+            s4.apply_transform(r_three_quarter)
+            png4 = s4.save_image(resolution=[800,800], visible=True)
+            three_quarter_frames.append(np.array(Image.open(io.BytesIO(png4))))
+        except ZeroDivisionError:
+            print("zero divide")
 
-    #     verts[i] = [new_x, new_y, new_z]
-    
-    #     # for visualization (mesh):
-    #     fig = plt.figure()
-    #     ax = fig.add_subplot(111, projection='3d')
-    #     ax.scatter(verts[:,0], verts[:,1], verts[:,2], c = "blue", alpha=0.5)
-    #     ax.set_xlim([-2, 35])   # Set x-axis limits
-    #     ax.set_ylim([-2, 35])   # Set y-axis limits
-    #     ax.set_zlim([-2, 35])   # Set z-axis limits
-    #     ax.set_box_aspect([1.0, 1.0, 1.0])
-    #     ax.set_xlabel("L")
-    #     ax.set_ylabel("a")
-    #     ax.set_zlabel("b")
-    #     ax.set_title("Mesh Surface Plot")
-    #     plt.show()
-
-    #     # Map all points to smoothed mesh:
-    #     print("binding")
-    boundedLABs = bindToOptimizedMeshBinding(final_mesh, allLABs)
-    # boundedLABs = allLABs
-
-    # For visualization (bounded LABs):
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
-    ax.scatter(boundedLABs[:,2], boundedLABs[:,1], boundedLABs[:,0], c = allRGB/255.0, alpha=0.15)
-    ax.set_xlim([-100, 100]) 
-    ax.set_ylim([-100, 100])  
-    ax.set_zlim([-100, 100])  
-    ax.set_box_aspect([1.0, 1.0, 1.0])
-    ax.set_xlabel("b")
-    ax.set_ylabel("a")
-    ax.set_zlabel("L")
-    # ax.set_title("Bounded LABs Surface Plot")
-    plt.show()
-
-    #     print("number allLAB", len(allLABs))
-    #     print("number boundedLABs", len(boundedLABs))
-
-    # print("finished preparing all LABs")
-    # rgb_ranges = np.array_split(allRGB, n_processes)
-
-    # with Pool(n_processes) as pool:
-    #     results = pool.starmap(process_colors, [(rgb_range, boundedLABs) for rgb_range in rgb_ranges])
-
-    # CandidateLABs = []
-    # CandidateRGBs = []
-    # for lab, rgb in results:
-    #     CandidateLABs += lab
-    #     CandidateRGBs += rgb
-
-    # with open("CandidateLABvals_step16_76_ellipsoid.txt", "w") as f, open("CorrespondingRGBVals_step16_76_ellipsoid.txt", "w") as f2:
-    #     for lab, rgb in zip(CandidateLABs, CandidateRGBs):
-    #         f.write(f"{lab[0]},{lab[1]},{lab[2]}\n")
-    #         f2.write(f"{rgb[0]},{rgb[1]},{rgb[2]}\n")
-
-    # print("Number of unique LABs:", len(CandidateLABs))
+    imageio.mimsave("energy_0.gif", frames, duration=0.2)
+    imageio.mimsave("energy_90.gif", quarter_frames, duration=0.2)
+    imageio.mimsave("energy_180.gif", half_frames, duration=0.2)
+    imageio.mimsave("energy_270.gif", three_quarter_frames, duration=0.2)
+    print("saved all views")
 
 
 if __name__ == "__main__":
