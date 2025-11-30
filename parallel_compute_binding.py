@@ -67,10 +67,12 @@ def process_colors(rgb_range, allLABs):
     return CandidateLABs, CandidateRGBs
 
 def save_single_view(mesh, rotation_matrix, filename):
-    s = trimesh.Scene(trimesh.Trimesh(vertices=mesh.vertices.copy(), faces=mesh.faces.copy()))
+    mesh_copy = trimesh.Trimesh(vertices=mesh.vertices.copy(), faces=mesh.faces.copy())
+    mesh_copy.visual.vertex_colors = mesh.visual.vertex_colors
+    s = trimesh.Scene(mesh)
     s.apply_transform(rotation_matrix)
-    png2 = s.save_image(resolution=[800,800], visible=True)
-    Image.open(io.BytesIO(png2)).save(filename + ".png")
+    png = s.save_image(resolution=[800,800], visible=True)
+    Image.open(io.BytesIO(png)).save(filename + ".png")
 
 def save_views(mesh: trimesh.Trimesh):
     r_quarter = trimesh.transformations.rotation_matrix(np.pi/2.0, [0, 1, 0])

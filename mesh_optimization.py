@@ -5,10 +5,6 @@ import torch
 from tqdm import tqdm
 from scipy.optimize import minimize
 import kaolin as kal
-
-# torch version: torch-2.5.1 + cu118
-import kaolin as kal
-
 # torch version: torch-2.5.1 + cu118
 
 def pointsToMesh(allLABs):
@@ -122,7 +118,9 @@ class ColorSpaceOptimizer:
         return final_mesh
     
 class ColorSpaceTorchOptimizer:
-    def __init__(self, mesh: trimesh.Trimesh, device="cuda"):
+    def __init__(self, mesh: trimesh.Trimesh, device="cuda", 
+                 containment_weight=4000.0, curvature_weight=3000.0, volume_weight=0.0001,
+                 save_intermediate_meshes=True):
         self.device = device
 
         self.vertices = torch.tensor(mesh.vertices, dtype=torch.float32, device=device)
@@ -132,19 +130,20 @@ class ColorSpaceTorchOptimizer:
         self.iterations = 5000
 
         self.deform_verts = torch.zeros_like(self.vertices, device=device, requires_grad=True) 
-        print(self.deform_verts.shape)
         # with torch.no_grad():
             # self.deform_verts[:, 0] = 25
         self.optimizer = torch.optim.SGD([self.deform_verts], lr=1e-4, momentum=0.9, weight_decay=0.01)
         
         # Containment:
-        self.containment_weight = 0000.0
+        self.containment_weight = containment_weight
 
         # Curvature:
-        self.curvature_weight = 3000.0
+        self.curvature_weight = curvature_weight
 
         # Volume:
-        self.volume_weight = 0.001
+        self.volume_weight = volume_weight
+
+        self.save_intermediate_meshes = save_intermediate_meshes
 
         self.intermediate_meshes = []
         self.curvatures = []
@@ -244,11 +243,12 @@ class ColorSpaceTorchOptimizer:
                 print(i)
                 print("loss:")
                 print(loss.item())
-                v = (self.vertices + self.deform_verts).detach().cpu().numpy()
-                intermediate_mesh = trimesh.Trimesh(vertices=v, faces=self.faces.detach().cpu().numpy())
-                curvature = np.array(np.abs(trimesh.curvature.discrete_gaussian_curvature_measure(intermediate_mesh, v, 1.0)))            
-                self.curvatures.append(curvature)
-                self.intermediate_meshes.append(intermediate_mesh)
+                if self.save_intermediate_meshes:
+                    v = (self.vertices + self.deform_verts).detach().cpu().numpy()
+                    intermediate_mesh = trimesh.Trimesh(vertices=v, faces=self.faces.detach().cpu().numpy())
+                    curvature = np.array(np.abs(trimesh.curvature.discrete_gaussian_curvature_measure(intermediate_mesh, v, 1.0)))            
+                    self.curvatures.append(curvature)
+                    self.intermediate_meshes.append(intermediate_mesh)
 
         final_mesh = trimesh.Trimesh(vertices=(self.vertices + self.deform_verts).detach().cpu().numpy(), faces=self.faces.detach().cpu().numpy())
         return final_mesh
@@ -256,11 +256,6 @@ class ColorSpaceTorchOptimizer:
     def getIntermediateMeshes(self):
         curvature_min = np.min(np.array(self.curvatures))
         curvature_max = np.max(np.array(self.curvatures))
-        print(curvature_min)
-        print(curvature_max)
-        
-        percentile5 = np.percentile(np.array(self.curvatures), 25)
-        print(percentile5)
 
         gamma = 0.3
         for mesh, curvature in zip(self.intermediate_meshes, self.curvatures):
