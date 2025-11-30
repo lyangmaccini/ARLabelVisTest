@@ -119,20 +119,22 @@ class ColorSpaceOptimizer:
     
 class ColorSpaceTorchOptimizer:
     def __init__(self, mesh: trimesh.Trimesh, device="cuda", 
-                 containment_weight=4000.0, curvature_weight=3000.0, volume_weight=0.0001,
-                 save_intermediate_meshes=True):
+                 containment_weight=2000.0, curvature_weight=3000.0, volume_weight=0.0001,
+                 save_intermediate_meshes=True,
+                 iterations=5000):
         self.device = device
 
         self.vertices = torch.tensor(mesh.vertices, dtype=torch.float32, device=device)
         self.faces = torch.tensor(mesh.faces, dtype=torch.int64, device=device)
 
         self.original_vertices = torch.tensor(mesh.vertices, dtype=torch.float32, device=device)
-        self.iterations = 5000
+        self.iterations = iterations
 
-        self.deform_verts = torch.zeros_like(self.vertices, device=device, requires_grad=True) 
+        self.deform_verts = torch.zeros_like(self.vertices, device=self.device, requires_grad=True)
+         
         # with torch.no_grad():
             # self.deform_verts[:, 0] = 25
-        self.optimizer = torch.optim.SGD([self.deform_verts], lr=1e-4, momentum=0.9, weight_decay=0.01)
+        self.optimizer = torch.optim.SGD([self.deform_verts], lr=1e-4, momentum=0.9)
         
         # Containment:
         self.containment_weight = containment_weight
@@ -147,6 +149,7 @@ class ColorSpaceTorchOptimizer:
 
         self.intermediate_meshes = []
         self.curvatures = []
+        self.colors = mesh.visual.vertex_colors
 
     def gaussian_curvature(self, vertices: torch.Tensor, faces: torch.Tensor):
         v0 = vertices[faces[:, 0]]
@@ -228,13 +231,16 @@ class ColorSpaceTorchOptimizer:
         # return self.containment_weight* self.containment(vertices, faces)
         # return self.curvature_weight * self.curvature(vertices, faces) + self.containment_weight * self.containment(vertices, faces)
     
-    def optimizeMesh(self):
-        neighbors = self.build_adjacency(len(self.vertices), self.faces.tolist())
+    def optimizeMesh(self, mesh: trimesh.Trimesh):
+        
+        mesh_vertices = torch.tensor(mesh.vertices, dtype=torch.float32, device=self.device)
+        mesh_faces = torch.tensor(mesh.faces, dtype=torch.int64, device=self.device)
+        neighbors = self.build_adjacency(len(mesh_vertices), mesh_faces.tolist())
         for i in tqdm(range(self.iterations)):
             
             self.optimizer.zero_grad()
-            new_vertices = self.vertices + self.deform_verts
-            loss = self.loss_fn(new_vertices, self.faces, neighbors)
+            new_vertices = mesh_vertices + self.deform_verts
+            loss = self.loss_fn(new_vertices, mesh_faces, neighbors)
             loss.backward()
             self.optimizer.step()
 
@@ -244,13 +250,14 @@ class ColorSpaceTorchOptimizer:
                 print("loss:")
                 print(loss.item())
                 if self.save_intermediate_meshes:
-                    v = (self.vertices + self.deform_verts).detach().cpu().numpy()
-                    intermediate_mesh = trimesh.Trimesh(vertices=v, faces=self.faces.detach().cpu().numpy())
+                    v = (mesh_vertices + self.deform_verts).detach().cpu().numpy()
+                    intermediate_mesh = trimesh.Trimesh(vertices=v, faces=mesh_faces.detach().cpu().numpy())
                     curvature = np.array(np.abs(trimesh.curvature.discrete_gaussian_curvature_measure(intermediate_mesh, v, 1.0)))            
                     self.curvatures.append(curvature)
                     self.intermediate_meshes.append(intermediate_mesh)
 
-        final_mesh = trimesh.Trimesh(vertices=(self.vertices + self.deform_verts).detach().cpu().numpy(), faces=self.faces.detach().cpu().numpy())
+        final_mesh = trimesh.Trimesh(vertices=(mesh_vertices + self.deform_verts).detach().cpu().numpy(), faces=mesh_faces.detach().cpu().numpy())
+        final_mesh.visual.vertex_colors = self.colors
         return final_mesh
     
     def getIntermediateMeshes(self):
