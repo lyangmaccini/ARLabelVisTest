@@ -46,10 +46,10 @@ def test_containment(LAB_mesh):
 def test_curvature(LAB_mesh):
     print("Testing curvature:")
 
-    mesh = get_LAB_mesh()
+    # mesh = get_LAB_mesh()
     
-    curvature_optimizer = ColorSpaceTorchOptimizer(mesh, containment_weight=0.0, volume_weight=0.0, iterations=15000)
-    optimized_mesh = curvature_optimizer.optimizeMesh(mesh)
+    curvature_optimizer = ColorSpaceTorchOptimizer(LAB_mesh, containment_weight=0.0, volume_weight=0.0, iterations=75000)
+    optimized_mesh = curvature_optimizer.optimizeMesh(LAB_mesh)
 
     scene = trimesh.Scene()
     scene.add_geometry(optimized_mesh)
@@ -57,19 +57,18 @@ def test_curvature(LAB_mesh):
 
     final_curvature = np.sum(curvature_optimizer.getFinalCurvature())
     initial_curvature = np.sum(curvature_optimizer.getOriginalCurvature())
-    print("Final curvature: " + final_curvature)
-    print("Initial curvature: " + initial_curvature)
+    print("Final curvature: " + str(final_curvature))
+    print("Initial curvature: " + str(initial_curvature))
     assert(final_curvature < initial_curvature)
     print("Passed curvature test.")
 
 def test_volume(LAB_mesh):
     print("Testing volume:")
 
-    mesh = get_LAB_mesh()
-    initial_volume = mesh.volume
+    initial_volume = LAB_mesh.volume
     
-    volume_optimizer = ColorSpaceTorchOptimizer(mesh, containment_weight=0.0, curvature_weight=0.0, iterations=15000)
-    optimized_mesh = volume_optimizer.optimizeMesh(mesh)
+    volume_optimizer = ColorSpaceTorchOptimizer(LAB_mesh, containment_weight=0.0, curvature_weight=0.0, volume_weight=1.0, iterations=5000, print_updates=False)
+    optimized_mesh = volume_optimizer.optimizeMesh(LAB_mesh)
 
     scene = trimesh.Scene()
     scene.add_geometry(optimized_mesh)
@@ -86,7 +85,7 @@ def main():
 
     # test_containment(LAB_mesh)
     test_curvature(LAB_mesh)    
-    # test_volume()
+    # test_volume(LAB_mesh)
 
 if __name__ == "__main__":
     main()

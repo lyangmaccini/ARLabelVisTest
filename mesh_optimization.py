@@ -119,8 +119,8 @@ class ColorSpaceOptimizer:
     
 class ColorSpaceTorchOptimizer:
     def __init__(self, mesh: trimesh.Trimesh, device="cuda", 
-                 containment_weight=2000.0, curvature_weight=6000.0, volume_weight=0.0001,
-                 save_intermediate_meshes=True,
+                 containment_weight=2000.0, curvature_weight=3000.0, volume_weight=0.0001,
+                 save_intermediate_meshes=True, print_updates=True,
                  iterations=5000):
         self.device = device
 
@@ -146,6 +146,7 @@ class ColorSpaceTorchOptimizer:
         self.volume_weight = volume_weight
 
         self.save_intermediate_meshes = save_intermediate_meshes
+        self.print_updates = print_updates
 
         self.intermediate_meshes = []
         self.curvatures = []
@@ -208,7 +209,8 @@ class ColorSpaceTorchOptimizer:
         def cot(a, b):
             dot = (a * b).sum(dim=1)
             cross = torch.linalg.norm(torch.cross(a, b), dim=1)
-            return dot / (cross + 1e-12)
+            cross = torch.clamp(cross, min=1e-6)
+            return dot / (cross)
 
         cot0 = cot(e1, e2)   
         cot1 = cot(e2, e0)  
@@ -233,9 +235,22 @@ class ColorSpaceTorchOptimizer:
         L.index_add_(0, i0, w * (V[i0] - V[i1]))
         L.index_add_(0, i1, w * (V[i1] - V[i0]))
 
-        curvature_energy = (L ** 2).sum()
+        face_area = 0.5 * torch.linalg.norm(torch.cross(v1 - v0, v2 - v0), dim=1)
+        vertex_area = torch.zeros((vertices.shape[0],), device=vertices.device)
+        vertex_area.index_add_(0, i0, face_area / 3)
+        vertex_area.index_add_(0, i1, face_area / 3)
+        vertex_area.index_add_(0, i2, face_area / 3)
 
-        return curvature_energy
+        vertex_area = vertex_area.unsqueeze(1)
+        vertex_area = torch.clamp(vertex_area, min=1e-6)  # avoid blow-up
+
+        # mean curvature vector
+        H = L / (2.0 * vertex_area)
+
+        # final curvature energy
+        loss = (H ** 2).sum()
+
+        return loss
     
     def curvature(self, vertices, faces, neighbors):
         # laplacian_loss = mesh_laplacian_smoothing(mesh, method="uniform")
@@ -253,13 +268,22 @@ class ColorSpaceTorchOptimizer:
         # c = distances.sum()
         # print("curve")
         # print(c)
-        # threshold = 0.015
-        # curvature = self.gaussian_curvature(vertices, faces)
-        # outliers = (curvature > threshold).float().sum().item()
-        # c = torch.sum(curvature ** 2)
-        # return c
+        threshold = 0.015
+        curvature = self.gaussian_curvature(vertices, faces)
+        outliers = (curvature > threshold).float().sum().item()
+        c = torch.sum(curvature ** 2)
+        return c
     
-        return self.curvature_loss(vertices, faces, neighbors)
+        # return self.curvature_loss(vertices, faces, neighbors)
+
+        # loss = 0.0
+        # for i, nbrs in enumerate(neighbors):
+        #     if len(nbrs) == 0:
+        #         continue
+        #     mean_nbr = vertices[nbrs].mean(dim=0)
+        #     loss += ((vertices[i] - mean_nbr).norm())**2
+
+        # return loss / len(neighbors)
             
     def volume(self, vertices, faces):
         vol = meshVolume(vertices,faces)
@@ -286,7 +310,7 @@ class ColorSpaceTorchOptimizer:
             loss.backward()
             self.optimizer.step()
 
-            if i % 10 == 0:
+            if i % 10 == 0 and self.print_updates:
                 print("iteration:")
                 print(i)
                 print("loss:")
