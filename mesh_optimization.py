@@ -119,7 +119,7 @@ class ColorSpaceOptimizer:
     
 class ColorSpaceTorchOptimizer:
     def __init__(self, mesh: trimesh.Trimesh, device="cuda", 
-                 containment_weight=2000.0, curvature_weight=3000.0, volume_weight=0.0001,
+                 containment_weight=2000.0, curvature_weight=6000.0, volume_weight=0.0001,
                  save_intermediate_meshes=True,
                  iterations=5000):
         self.device = device
@@ -134,7 +134,7 @@ class ColorSpaceTorchOptimizer:
          
         # with torch.no_grad():
             # self.deform_verts[:, 0] = 25
-        self.optimizer = torch.optim.SGD([self.deform_verts], lr=1e-4, momentum=0.9)
+        self.optimizer = torch.optim.SGD([self.deform_verts], lr=1e-5, momentum=0.75)
         
         # Containment:
         self.containment_weight = containment_weight
@@ -216,7 +216,7 @@ class ColorSpaceTorchOptimizer:
         # c = distances.sum()
         # print("curve")
         # print(c)
-        return c + outliers
+        return c
         # return self.laplacian_loss(vertices, neighbors)
             
     def volume(self, vertices, faces):
@@ -260,6 +260,12 @@ class ColorSpaceTorchOptimizer:
         final_mesh.visual.vertex_colors = self.colors
         return final_mesh
     
+    def getOriginalCurvature(self):
+        return self.curvatures[0]
+
+    def getFinalCurvature(self):
+        return self.curvatures[-1]
+
     def getIntermediateMeshes(self):
         curvature_min = np.min(np.array(self.curvatures))
         curvature_max = np.max(np.array(self.curvatures))
