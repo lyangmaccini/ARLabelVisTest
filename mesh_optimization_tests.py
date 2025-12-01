@@ -39,7 +39,8 @@ def test_containment(LAB_mesh):
     scene.show()
 
     diff = abs(np.sum(optimized_mesh.vertices - LAB_mesh.vertices))
-    assert(diff < 100)
+    assert(diff < 100) # should do a quick check to see if everything's inside the mesh-- verts could be not exactly where they started but still within the mesh
+    print("Shifted difference after optimization: " + str(diff))
     print("Passed containment test.")
 
 def test_curvature(LAB_mesh):
@@ -54,19 +55,31 @@ def test_curvature(LAB_mesh):
     scene.add_geometry(optimized_mesh)
     scene.show()
 
-    final_curvature = curvature_optimizer.getFinalCurvature()
-    print(final_curvature)
-    print(np.sum(final_curvature))
-    print(np.sum(curvature_optimizer.getOriginalCurvature()))
+    final_curvature = np.sum(curvature_optimizer.getFinalCurvature())
+    initial_curvature = np.sum(curvature_optimizer.getOriginalCurvature())
+    print("Final curvature: " + final_curvature)
+    print("Initial curvature: " + initial_curvature)
+    assert(final_curvature < initial_curvature)
     print("Passed curvature test.")
 
 def test_volume(LAB_mesh):
     print("Testing volume:")
-    mesh = get_LAB_mesh()
-    volume_optimizer = ColorSpaceTorchOptimizer(mesh, containment_weight=0.0, curvature_weight=0.0)
-    optimized_mesh = volume_optimizer.optimizeMesh()
 
-    print("Passed volume test.")
+    mesh = get_LAB_mesh()
+    initial_volume = mesh.volume
+    
+    volume_optimizer = ColorSpaceTorchOptimizer(mesh, containment_weight=0.0, curvature_weight=0.0, iterations=15000)
+    optimized_mesh = volume_optimizer.optimizeMesh(mesh)
+
+    scene = trimesh.Scene()
+    scene.add_geometry(optimized_mesh)
+    scene.show()
+
+    final_volume = optimized_mesh.volume
+    print("Final volume: " + str(final_volume))
+    print("Initial volume: " + str(initial_volume))
+    assert(final_volume > initial_volume)
+    print("Passed curvature test.")
 
 def main():
     LAB_mesh = get_LAB_mesh()

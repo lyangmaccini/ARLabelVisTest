@@ -196,6 +196,47 @@ class ColorSpaceTorchOptimizer:
         # print(c)
         return c
     
+    def curvature_loss(self, vertices, faces, neighbors):
+        v0 = vertices[faces[:, 0]]
+        v1 = vertices[faces[:, 1]]
+        v2 = vertices[faces[:, 2]]
+
+        e0 = v2 - v1   
+        e1 = v0 - v2   
+        e2 = v1 - v0   
+
+        def cot(a, b):
+            dot = (a * b).sum(dim=1)
+            cross = torch.linalg.norm(torch.cross(a, b), dim=1)
+            return dot / (cross + 1e-12)
+
+        cot0 = cot(e1, e2)   
+        cot1 = cot(e2, e0)  
+        cot2 = cot(e0, e1)   
+
+        V = vertices
+        L = torch.zeros_like(V)
+
+        i0 = faces[:, 0]
+        i1 = faces[:, 1]
+        i2 = faces[:, 2]
+
+        w = cot0.unsqueeze(1)
+        L.index_add_(0, i1, w * (V[i1] - V[i2]))
+        L.index_add_(0, i2, w * (V[i2] - V[i1]))
+
+        w = cot1.unsqueeze(1)
+        L.index_add_(0, i2, w * (V[i2] - V[i0]))
+        L.index_add_(0, i0, w * (V[i0] - V[i2]))
+
+        w = cot2.unsqueeze(1)
+        L.index_add_(0, i0, w * (V[i0] - V[i1]))
+        L.index_add_(0, i1, w * (V[i1] - V[i0]))
+
+        curvature_energy = (L ** 2).sum()
+
+        return curvature_energy
+    
     def curvature(self, vertices, faces, neighbors):
         # laplacian_loss = mesh_laplacian_smoothing(mesh, method="uniform")
         # edge_loss = mesh_edge_loss(mesh)
@@ -203,12 +244,8 @@ class ColorSpaceTorchOptimizer:
         # curve = 0.1 * laplacian_loss + edge_loss + 0.01 * normal_loss
         # print("curve")
         # print(curve)
-        threshold = 0.015
-        curvature = self.gaussian_curvature(vertices, faces)
         # print(torch.max(curvature))
-        outliers = (curvature > threshold).float().sum().item()
         # print(outliers)
-        c = torch.sum(curvature ** 2)
         # print("cur")
         # print(c)
         # smoothed_verts = kal.metrics.trianglemesh.uniform_laplacian_smoothing(torch.unsqueeze(vertices, dim=1), faces)[0]
@@ -216,8 +253,13 @@ class ColorSpaceTorchOptimizer:
         # c = distances.sum()
         # print("curve")
         # print(c)
-        return c
-        # return self.laplacian_loss(vertices, neighbors)
+        # threshold = 0.015
+        # curvature = self.gaussian_curvature(vertices, faces)
+        # outliers = (curvature > threshold).float().sum().item()
+        # c = torch.sum(curvature ** 2)
+        # return c
+    
+        return self.curvature_loss(vertices, faces, neighbors)
             
     def volume(self, vertices, faces):
         vol = meshVolume(vertices,faces)
