@@ -124,7 +124,7 @@ def main():
     # mesh.show()
 
     optimizer = ColorSpaceTorchOptimizer(mesh)
-    final_mesh = optimizer.optimizeMesh()
+    final_mesh = optimizer.optimizeMesh(mesh)
     final_mesh.visual.vertex_colors = get_mesh_vertex_colors(final_mesh, allLABs, allRGB) 
 
     scene = trimesh.Scene()
