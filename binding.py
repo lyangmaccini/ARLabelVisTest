@@ -10,7 +10,7 @@ import math
 from scipy.spatial import ConvexHull, convex_hull_plot_2d
 import alphashape
 from scipy.optimize import curve_fit
-import cvxpy as cp
+# import cvxpy as cp
 # import binvox_rw 
 from skimage import measure
 import matplotlib.pyplot as plt
@@ -64,77 +64,77 @@ def bindToOptimizedMeshBinding(mesh: trimesh.Trimesh, allLABs):
 def bindLABtoEllipsoid(allLABPoints, allRGB):
 
     # Create a 3D surface plot
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
+    # fig = plt.figure()
+    # ax = fig.add_subplot(111, projection='3d')
 
     # Find which point make up the boundary
-    shape = alphashape.alphashape(allLABPoints, alpha=0.05)
-    boundaryLABs = shape.vertices
+    # shape = alphashape.alphashape(allLABPoints, alpha=0.05)
+    # boundaryLABs = shape.vertices
 
-    dim  = boundaryLABs.shape[1]
-    hull = ConvexHull(boundaryLABs)
-    A = hull.equations[:,0:dim]
-    b = -hull.equations[:,dim]
-    B = cp.Variable((dim,dim), PSD=True) #Ellipsoid
-    d = cp.Variable(dim)                 #Center
+    # dim  = boundaryLABs.shape[1]
+    # hull = ConvexHull(boundaryLABs)
+    # A = hull.equations[:,0:dim]
+    # b = -hull.equations[:,dim]
+    # B = cp.Variable((dim,dim), PSD=True) #Ellipsoid
+    # d = cp.Variable(dim)                 #Center
 
-    constraints = [cp.norm(B@A[i],1.5)+A[i]@d<=b[i] for i in range(len(A))]
-    prob = cp.Problem(cp.Minimize(-cp.log_det(B)), constraints)
-    optval = prob.solve()
+    # constraints = [cp.norm(B@A[i],1.5)+A[i]@d<=b[i] for i in range(len(A))]
+    # prob = cp.Problem(cp.Minimize(-cp.log_det(B)), constraints)
+    # optval = prob.solve()
 
-    shape_matrix = np.linalg.inv(B.value.T @ B.value)
-    center = d.value
-    eigenvalues, eigenvectors = np.linalg.eig(shape_matrix)
-    rotation = eigenvectors
-    rotation_inv = np.linalg.inv(rotation)
-    axes = 1/ np.sqrt(eigenvalues)
+    # shape_matrix = np.linalg.inv(B.value.T @ B.value)
+    # center = d.value
+    # eigenvalues, eigenvectors = np.linalg.eig(shape_matrix)
+    # rotation = eigenvectors
+    # rotation_inv = np.linalg.inv(rotation)
+    # axes = 1/ np.sqrt(eigenvalues)
 
-    # To graph the ellipsoid:
-    # u = np.linspace(0.0, 2.0 * np.pi, 100)
-    # v = np.linspace(0.0, np.pi, 100)
-    # x = axes[0] * np.outer(np.cos(u), np.sin(v))
-    # y = axes[1] * np.outer(np.sin(u), np.sin(v))
-    # z = axes[2] * np.outer(np.ones_like(u), np.cos(v))
-    # for i in range(len(x)):
-    #     for j in range(len(x)):
-    #         [x[i,j],y[i,j],z[i,j]] = np.dot([x[i,j],y[i,j],z[i,j]], rotation) + center
-    # ax.scatter(x, y, z, c = "blue", alpha=0.5)
+    # # To graph the ellipsoid:
+    # # u = np.linspace(0.0, 2.0 * np.pi, 100)
+    # # v = np.linspace(0.0, np.pi, 100)
+    # # x = axes[0] * np.outer(np.cos(u), np.sin(v))
+    # # y = axes[1] * np.outer(np.sin(u), np.sin(v))
+    # # z = axes[2] * np.outer(np.ones_like(u), np.cos(v))
+    # # for i in range(len(x)):
+    # #     for j in range(len(x)):
+    # #         [x[i,j],y[i,j],z[i,j]] = np.dot([x[i,j],y[i,j],z[i,j]], rotation) + center
+    # # ax.scatter(x, y, z, c = "blue", alpha=0.5)
 
-    # Create a copy of the original Lab Points
-    og_allLabPoints = np.copy(allLABPoints)
+    # # Create a copy of the original Lab Points
+    # og_allLabPoints = np.copy(allLABPoints)
 
-    for i, point in enumerate(allLABPoints):
-        # If the point is outside of the binding ellipsoid, move it onto the ellipsoid using ray intersection
-        if not insideRotatedEllipsoid(point[0], point[1], point[2], shape_matrix, center):
-            point = point - center
-            point = rotation_inv @ point
-            direction = -point
-            new_point = ellipsoidIntersection(point[0], point[1], point[2], direction[0], direction[1], direction[2], 1, 1, 1)
-            new_point = rotation @ new_point
-            new_point = new_point  + center
-            allLABPoints[i] = np.asarray(new_point)
+    # for i, point in enumerate(allLABPoints):
+    #     # If the point is outside of the binding ellipsoid, move it onto the ellipsoid using ray intersection
+    #     if not insideRotatedEllipsoid(point[0], point[1], point[2], shape_matrix, center):
+    #         point = point - center
+    #         point = rotation_inv @ point
+    #         direction = -point
+    #         new_point = ellipsoidIntersection(point[0], point[1], point[2], direction[0], direction[1], direction[2], 1, 1, 1)
+    #         new_point = rotation @ new_point
+    #         new_point = new_point  + center
+    #         allLABPoints[i] = np.asarray(new_point)
 
-    # Plot the positions of the bounded LAB points in their original RGB color
-    X = allLABPoints[:, 0]
-    Y = allLABPoints[:, 1]
-    Z = allLABPoints[:, 2]
-    # ax.scatter(X, Y, Z, c = allRGB/255.0, alpha=0.5)
+    # # Plot the positions of the bounded LAB points in their original RGB color
+    # X = allLABPoints[:, 0]
+    # Y = allLABPoints[:, 1]
+    # Z = allLABPoints[:, 2]
+    # # ax.scatter(X, Y, Z, c = allRGB/255.0, alpha=0.5)
     
-    # Plot the positions of the original/unchanged LAB points in their original RGB color
-    originalX = og_allLabPoints[:, 0]
-    originalY = og_allLabPoints[:, 1]
-    originalZ = og_allLabPoints[:, 2]
-    # ax.scatter(originalX, originalY, originalZ, c = "red", alpha=0.05)
+    # # Plot the positions of the original/unchanged LAB points in their original RGB color
+    # originalX = og_allLabPoints[:, 0]
+    # originalY = og_allLabPoints[:, 1]
+    # originalZ = og_allLabPoints[:, 2]
+    # # ax.scatter(originalX, originalY, originalZ, c = "red", alpha=0.05)
 
-    # Set labels and title
-    ax.set_xlim([-100, 100])   # Set x-axis limits
-    ax.set_ylim([-100, 100])   # Set y-axis limits
-    ax.set_zlim([-100, 100])   # Set z-axis limits
-    ax.set_box_aspect([1.0, 1.0, 1.0])
-    ax.set_xlabel("L")
-    ax.set_ylabel("a")
-    ax.set_zlabel("b")
-    ax.set_title("Ellipsoid Surface Plot")
+    # # Set labels and title
+    # ax.set_xlim([-100, 100])   # Set x-axis limits
+    # ax.set_ylim([-100, 100])   # Set y-axis limits
+    # ax.set_zlim([-100, 100])   # Set z-axis limits
+    # ax.set_box_aspect([1.0, 1.0, 1.0])
+    # ax.set_xlabel("L")
+    # ax.set_ylabel("a")
+    # ax.set_zlabel("b")
+    # ax.set_title("Ellipsoid Surface Plot")
 
     # plt.show()
 
