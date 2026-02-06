@@ -12,8 +12,8 @@ import matplotlib.pyplot as plt
 import pyvista as pv 
 # from binding import bindToMeshBinding
 # from voxels import convertToVoxels
-from mesh_optimization import pointsToMesh, ColorSpaceOptimizer, ColorSpaceTorchOptimizer
-from binding import bindToOptimizedMeshBinding
+from utils.mesh_optimization import pointsToMesh, ColorSpaceOptimizer, ColorSpaceTorchOptimizer
+from utils.binding import bindToOptimizedMeshBinding
 import trimesh
 import math
 from trimesh.viewer import SceneViewer
@@ -23,6 +23,7 @@ from PIL import Image
 import io
 from RGD.mesh import Mesh
 from RGD.rgd_admm import rgd_admm
+import alphashape
 
 from mpl_toolkits.mplot3d import Axes3D
 import matplotlib.pyplot as plt
@@ -120,9 +121,12 @@ def generate_LABs(stepSize = 16):
 
 def save_off_file(filename, mesh):
     print(filename)
+    filename = "data/" + filename
     off_data = trimesh.exchange.off.export_off(mesh)
+    # print("hello")
     with open(filename, "w") as f:
         f.write(off_data)
+    print("Saved to " + filename)
 
 def euclidean_distance(p1, p2):
     return math.sqrt((p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2 + (p1[2] - p2[2]) ** 2)
@@ -166,7 +170,7 @@ def furthest_rgd(mesh:Mesh, allLABS, allRGBs, num=1):
     furthest = np.array(furthest)
     return furthest
 
-def plot_lab_points_3d(allLABs, allRGBs, furthestRGBs=None, subsample=1):
+def plot_lab_points_3d(allLABs, furthestRGBs=None, subsample=1):
     """
     allLABs: (N,3) LAB points
     allRGBs: (N,3) RGB points in [0,255]
@@ -175,36 +179,29 @@ def plot_lab_points_3d(allLABs, allRGBs, furthestRGBs=None, subsample=1):
     """
 
     allLABs = np.asarray(allLABs)
-    allRGBs = np.asarray(allRGBs) / 255.0
+    # allRGBs = np.asarray(allRGBs) / 255.0
 
     fig = plt.figure(figsize=(10, 8))
     ax = fig.add_subplot(111, projection="3d")
 
-    # Plot full LAB cloud
-    ax.scatter(
-        allLABs[::subsample, 0],
-        allLABs[::subsample, 1],
-        allLABs[::subsample, 2],
-        c=allRGBs[::subsample],
-        s=8,
-        alpha=0.4,
-        linewidth=0
-    )
-
-    # Highlight furthest points (if provided)
     if furthestRGBs is not None:
-        furthestRGBs = np.asarray(furthestRGBs)
-        furthestLABs = RGBToLAB(furthestRGBs)
-
         ax.scatter(
-            furthestLABs[:, 0],
-            furthestLABs[:, 1],
-            furthestLABs[:, 2],
-            c=furthestRGBs / 255.0,
+            allLABs[::subsample, 0],
+            allLABs[::subsample, 1],
+            allLABs[::subsample, 2],
+            c=furthestRGBs[::subsample]/255.0,
             s=120,
-            edgecolors="black",
-            linewidth=1.5,
-            label="Furthest colors"
+            # alpha=0.4,
+            linewidth=1.5
+        )
+    else:
+        ax.scatter(
+            allLABs[::subsample, 0],
+            allLABs[::subsample, 1],
+            allLABs[::subsample, 2],
+            s=120,
+            # alpha=0.4,
+            linewidth=1.5
         )
 
     ax.set_xlabel("L*")
@@ -264,35 +261,51 @@ def assign_vertex_colors(mesh:trimesh.Trimesh, allLABs, furthest):
         colors.append([c[0], c[1], c[2], 1.0])
     return np.array(colors)
 
+def resample(filename):
+    vertices, faces = Mesh.verts_from_file(filename)
+    mesh = trimesh.Trimesh(vertices=vertices, faces=faces)
+    count = 2500
+    sampled_vertices, face_indices = trimesh.sample.sample_surface_even(mesh, count) # consider adding a seed for consistentcy?
+    shape = alphashape.alphashape(sampled_vertices, alpha=0.01)
+    print(np.array(sampled_vertices).shape)
+    print(shape.vertices.shape)
+    mesh = trimesh.Trimesh(vertices=shape.vertices, faces=shape.faces)
+    return mesh
+
+
 def main():
     num_cpus = os.cpu_count() 
     n_processes = num_cpus - 4 # Change this to use more/less CPUs. 
     print("Number of CPUs:", num_cpus, "Number of CPUs we are using:", n_processes)
     print("checl")
 
-    allRGBS, allLABs = generate_LABs()
-    interval = 10
-    allLABs = allLABs[::interval]
-    allRGBS = allRGBS[::interval]
+    allRGBS, allLABs = generate_LABs(stepSize=16)
+    # subsample = 50
+    # plot_lab_points_3d(allLABs, subsample=50)
+    # interval = 75
+    # allLABs = allLABs[::interval]
+    # allRGBS = allRGBS[::interval]
 
-    # save_off_file(f"CIELAB_{interval}.off", pointsToMesh(allLABs))
+    save_off_file(f"RGB2CIELAB_16.off", pointsToMesh(allLABs))
 
-    furthest = furthest_rgd(Mesh.from_file(f"CIELAB_{interval}.off"), allLABs, allRGBS)  
-    print(furthest) 
-    print(furthest.shape)
-    print(allLABs.shape)
+    # furthest = furthest_rgd(Mesh.from_file(f"CIELAB_4_not_resampled.off"), allLABs, allRGBS)  
+    # mesh = resample("CIELAB_4_not_resampled.off")
+    # print(verts.shape)
+    # print(faces.shape)
+    # print(faces)
+    # plot_lab_points_3d(mesh.vertices, subsample=5)
+    # print(mesh.is_watertight)
+    # mesh.show()
+    # print(furthest) 
+    # print(furthest.shape)
+    # print(allLABs.shape)
 
-    plot_lab_points_3d(
-    allLABs,
-    allRGBS,
-    furthestRGBs=furthest,
-    subsample=5  # increase if it’s slow
-    )
+    # plot_lab_points_3d(allLABs, allRGBS, furthestRGBs=furthest)
 
-    mesh = pointsToMesh(allLABs)
-    mesh.visual.vertex_colors = assign_vertex_colors(mesh, allLABs, furthest)
-    print(mesh.visual.vertex_colors)
-    mesh.show()
+    # mesh = pointsToMesh(allLABs)
+    # mesh.visual.vertex_colors = assign_vertex_colors(mesh, allLABs, furthest)
+    # print(mesh.visual.vertex_colors)
+    # mesh.show()
 
 
     # mesh = pointsToMesh(allLABs)

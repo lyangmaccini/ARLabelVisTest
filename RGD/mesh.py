@@ -78,6 +78,25 @@ class Mesh:
         name = os.path.basename(filename).replace('.off', '')
         return cls(vertices, faces, name)
     
+    @classmethod
+    def verts_from_file(cls, filename: str):
+        """
+        Load mesh from .OFF file.
+        
+        Args:
+            filename: Path to .OFF file (with or without extension)
+            
+        Returns:
+            Mesh object
+        """
+        from .utils import read_off
+        
+        if not filename.endswith('.off'):
+            filename = filename + '.off'
+        
+        vertices, faces = read_off(filename)
+        return np.array(vertices), np.array(faces)
+    
     def _compute_all(self):
         """Compute all geometric quantities."""
         # Face normals and areas
