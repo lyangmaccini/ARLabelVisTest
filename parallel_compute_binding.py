@@ -112,6 +112,7 @@ def generate_LABs(stepSize = 16):
     allRGBs = np.array([[r-1, g-1, b-1] for r in range(0, 257, stepSize)
                                for g in range(0, 257, stepSize)
                                for b in range(0, 257, stepSize)])
+    print(len(range(0, 257, stepSize)))
     allRGBs = np.where(allRGBs < 0, 0, allRGBs)
     allRGBs = np.where(allRGBs > 255, 255, allRGBs)
     allLABs = RGBToLAB(allRGBs)
@@ -145,12 +146,31 @@ def furthest_rgd(mesh:Mesh, allLABS, allRGBs, num=1):
                 closest_vert = i
         return closest_vert
     
+    def closest_lab(vertex, num=1):
+        # would have to modify for higher number of points for distance
+        closest_lab = 0
+        closest_dist = 1000000
+        for i, lab in enumerate(allLABS):
+            # print(mesh_vertex)
+            # print(lab)
+            euclidean_dist = euclidean_distance(vertex, lab)
+            if euclidean_dist < closest_dist:
+                closest_dist = euclidean_dist
+                closest_lab = i
+        return closest_lab
+    
     furthest = []
 
     LABtoVertices = [] # closest vertex (index) to each LAB point
     for lab in allLABS:
         LABtoVertices.append(closest_vertex(lab))
     LABtoVertices = np.array(LABtoVertices)
+    print("closest vertices found")
+
+    VerticestoLAB = [] # closest vertex (index) to each LAB point
+    for vert in mesh.vertices:
+        VerticestoLAB.append(closest_lab(vert))
+    VerticestoLAB = np.array(VerticestoLAB)
     print("closest vertices found")
 
     # for i in range(len(mesh.vertices)):
@@ -164,8 +184,9 @@ def furthest_rgd(mesh:Mesh, allLABS, allRGBs, num=1):
     for i, lab in enumerate(LABtoVertices):
         print(i)
         distances = rgd_admm(mesh, source_indices=lab, quiet=True)
-        furthest_distance_idx = np.argmax(distances)
-        c = allRGBs[furthest_distance_idx]
+        furthest_distance_vertex_idx = np.argmax(distances)
+        print(furthest_distance_vertex_idx)
+        c = allRGBs[VerticestoLAB[furthest_distance_vertex_idx]]
         furthest.append(c)
     furthest = np.array(furthest)
     return furthest
@@ -266,7 +287,7 @@ def resample(filename):
         filename = "data/" + filename
     vertices, faces = Mesh.verts_from_file(filename)
     mesh = trimesh.Trimesh(vertices=vertices, faces=faces)
-    count = 2500
+    count = 500
     sampled_vertices, face_indices = trimesh.sample.sample_surface_even(mesh, count) # consider adding a seed for consistentcy?
     shape = alphashape.alphashape(sampled_vertices, alpha=0.01)
     print(np.array(sampled_vertices).shape)
@@ -282,9 +303,14 @@ def main():
     print("checl")
 
     rgb2cielab_16_resampled = "data/RGB2CIELAB_16_resampled.off"
-    rgb2cielab_32_resampled = "data/RGB2CIELAB_32.off"
+    rgb2cielab_32_resampled = "data/RGB2CIELAB_32_resampled.off"
+    rgb2cielab_64_resampled = "data/RGB2CIELAB_64_resampled.off"
 
-    allRGBS, allLABs = generate_LABs(stepSize=32)
+    rgb2cielab_16 = "data/RGB2CIELAB_16.off"
+    rgb2cielab_32 = "data/RGB2CIELAB_32.off" # nan? i think too few verts
+    rgb2cielab_64 = "data/RGB2CIELAB_64.off"
+
+    allRGBS, allLABs = generate_LABs(stepSize=16)
     # subsample = 50
     # plot_lab_points_3d(allLABs, subsample=50)
 
@@ -293,28 +319,36 @@ def main():
     # allLABs = allLABs[::interval]
     # allRGBS = allRGBS[::interval]
 
-    # Save data filesw
-    # save_off_file("RGB2CIELAB_32.off", pointsToMesh(allLABs))
-
-    # Calculate farthest distances 
-    furthest = furthest_rgd(Mesh.from_file(rgb2cielab_32_resampled), allLABs, allRGBS)  
-    print(furthest.shape)
-    print(allLABs.shape)
-
+    # Save data files
+    # save_off_file("RGB2CIELAB_64.off", pointsToMesh(allLABs))
 
     # Saving resampled files
     # mesh = resample("RGB2CIELAB_16.off")
     # save_off_file("RGB2CIELAB_16_resampled.off", mesh)
+    # mesh.show()
+
+    # Calculate farthest distances 
+    furthest = furthest_rgd(Mesh.from_file(rgb2cielab_16_resampled), allLABs, allRGBS)  
+    print(furthest.shape)
+    print(allLABs.shape)
 
     # Plotting results with matplotlib
-    # plot_lab_points_3d(mesh.vertices, subsample=5)
     plot_lab_points_3d(allLABs, furthestRGBs=furthest)
 
     print(furthest)
+    np.savetxt('data/Furthest_RGB_32_resampled.txt', furthest, fmt='%d')
+
+    
+    
     # with open("data/Furthest_RGB_32_resampled.txt", "w") as f:
         # f.write(furthest)
     # print("Saved furthest colors")
-    np.savetxt('data/Furthest_RGB_32_resampled.txt', furthest, fmt='%d')
+
+
+    with open("CandidateLABvals_step16_76_ellipsoid.txt", "w") as f, open("CorrespondingRGBVals_step16_76_ellipsoid.txt", "w") as f2:
+        for lab, rgb in zip(furthest.tolist(), allRGBS.tolist()):
+            f.write(f"{lab[0]},{lab[1]},{lab[2]}\n")
+            f2.write(f"{rgb[0]},{rgb[1]},{rgb[2]}\n")
 
 
     # Assign proper colors to vertices

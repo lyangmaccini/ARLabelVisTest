@@ -42,8 +42,8 @@ def RGBToLAB(RGB):
 
     return np.asarray([L, a, b])
 
-RGB_file = open("CorrespondingRGBVals.txt", "r")
-LAB_file = open("CandidateLABvals.txt", "r")
+RGB_file = open("CorrespondingRGBVals_64.txt", "r")
+LAB_file = open("CandidateLABvals_64.txt", "r")
 
 rgbVals = RGB_file.readlines()
 labVals = LAB_file.readlines()
@@ -74,18 +74,19 @@ for idx in range(len(rgbVals)):
     LookupTexture[rgb[0]][rgb[1]][rgb[2]] = labPoint
 
 # Use the built-in RegularGridInterpolator
-x = np.arange(-1, 256, 16)
+stepsize = 16
+x = np.arange(-1, 256, stepsize)
 x[0] = 0
-y = np.arange(-1, 256, 16)
+y = np.arange(-1, 256, stepsize)
 y[0] = 0
-z = np.arange(-1, 256, 16)
+z = np.arange(-1, 256, stepsize)
 z[0] = 0
 X, Y, Z = np.meshgrid(x, y, z)
 points = np.column_stack((X.flatten(), Y.flatten(), Z.flatten()))
-values = np.zeros((17, 17, 17, 3)) #Step size + 1 number of values in each dimension
-for i in range(17):
-    for j in range(17):
-        for k in range(17):
+values = np.zeros((stepsize + 1, stepsize + 1, stepsize + 1, 3)) #Step size + 1 number of values in each dimension
+for i in range(stepsize + 1):
+    for j in range(stepsize + 1):
+        for k in range(stepsize + 1):
             LAB = LookupTexture[x[i]][y[j]][z[k]]
             values[i,j,k, 0] = LAB.l
             values[i,j,k, 1] = LAB.a
