@@ -161,8 +161,8 @@ def furthest_rgd(mesh:Mesh, allLABS, allRGBs, num=1):
     #     furthest.append([c[0], c[1], c[2], 1.0])
 
         
-    for lab in LABtoVertices:
-        print(lab)
+    for i, lab in enumerate(LABtoVertices):
+        print(i)
         distances = rgd_admm(mesh, source_indices=lab, quiet=True)
         furthest_distance_idx = np.argmax(distances)
         c = allRGBs[furthest_distance_idx]
@@ -262,6 +262,8 @@ def assign_vertex_colors(mesh:trimesh.Trimesh, allLABs, furthest):
     return np.array(colors)
 
 def resample(filename):
+    if filename.split("/")[0] != "data":
+        filename = "data/" + filename
     vertices, faces = Mesh.verts_from_file(filename)
     mesh = trimesh.Trimesh(vertices=vertices, faces=faces)
     count = 2500
@@ -279,96 +281,47 @@ def main():
     print("Number of CPUs:", num_cpus, "Number of CPUs we are using:", n_processes)
     print("checl")
 
-    allRGBS, allLABs = generate_LABs(stepSize=16)
+    rgb2cielab_16_resampled = "data/RGB2CIELAB_16_resampled.off"
+    rgb2cielab_32_resampled = "data/RGB2CIELAB_32.off"
+
+    allRGBS, allLABs = generate_LABs(stepSize=32)
     # subsample = 50
     # plot_lab_points_3d(allLABs, subsample=50)
+
+    # Further subsample LABs and RGBs
     # interval = 75
     # allLABs = allLABs[::interval]
     # allRGBS = allRGBS[::interval]
 
-    save_off_file(f"RGB2CIELAB_16.off", pointsToMesh(allLABs))
+    # Save data filesw
+    # save_off_file("RGB2CIELAB_32.off", pointsToMesh(allLABs))
 
-    # furthest = furthest_rgd(Mesh.from_file(f"CIELAB_4_not_resampled.off"), allLABs, allRGBS)  
-    # mesh = resample("CIELAB_4_not_resampled.off")
-    # print(verts.shape)
-    # print(faces.shape)
-    # print(faces)
+    # Calculate farthest distances 
+    furthest = furthest_rgd(Mesh.from_file(rgb2cielab_32_resampled), allLABs, allRGBS)  
+    print(furthest.shape)
+    print(allLABs.shape)
+
+
+    # Saving resampled files
+    # mesh = resample("RGB2CIELAB_16.off")
+    # save_off_file("RGB2CIELAB_16_resampled.off", mesh)
+
+    # Plotting results with matplotlib
     # plot_lab_points_3d(mesh.vertices, subsample=5)
-    # print(mesh.is_watertight)
-    # mesh.show()
-    # print(furthest) 
-    # print(furthest.shape)
-    # print(allLABs.shape)
+    plot_lab_points_3d(allLABs, furthestRGBs=furthest)
 
-    # plot_lab_points_3d(allLABs, allRGBS, furthestRGBs=furthest)
+    print(furthest)
+    # with open("data/Furthest_RGB_32_resampled.txt", "w") as f:
+        # f.write(furthest)
+    # print("Saved furthest colors")
+    np.savetxt('data/Furthest_RGB_32_resampled.txt', furthest, fmt='%d')
 
+
+    # Assign proper colors to vertices
     # mesh = pointsToMesh(allLABs)
     # mesh.visual.vertex_colors = assign_vertex_colors(mesh, allLABs, furthest)
     # print(mesh.visual.vertex_colors)
     # mesh.show()
-
-
-    # mesh = pointsToMesh(allLABs)
-    # mesh.visual.vertex_colors = get_mesh_vertex_colors(mesh, allLABs, allRGB)
-    # save_views(mesh)
-    # mesh.show()
-
-    # optimizer = ColorSpaceTorchOptimizer(mesh)
-    # final_mesh = optimizer.optimizeMesh(mesh)
-    # final_mesh.visual.vertex_colors = get_mesh_vertex_colors(final_mesh, allLABs, allRGB) 
-
-    # scene = trimesh.Scene()
-    # # scene.add_geometry(mesh)
-    # scene.add_geometry(final_mesh)
-    # scene.show()
-
-    # intermediate_meshes = optimizer.getIntermediateMeshes()
-    # scene.add_geometry(intermediate_meshes[0])
-    # # scene.show()
-
-    # frames = []
-    # quarter_frames = []
-    # half_frames = []
-    # three_quarter_frames = []
-    # r_quarter = trimesh.transformations.rotation_matrix(np.pi/2.0, [0, 1, 0])
-    # r_half = trimesh.transformations.rotation_matrix(np.pi, [0, 1, 0])
-    # r_three_quarter = trimesh.transformations.rotation_matrix(3.0*np.pi/2.0, [0, 1, 0])
-    # for mesh in intermediate_meshes:
-    #     try:
-    #         t1 = trimesh.Trimesh(vertices=mesh.vertices.copy(), faces=mesh.faces.copy())
-    #         t1.visual.vertex_colors = mesh.visual.vertex_colors
-    #         s1 = trimesh.Scene(t1)
-    #         png1 = s1.save_image(resolution=[800,800], visible=True)
-    #         frames.append(np.array(Image.open(io.BytesIO(png1))))
-
-    #         t2 = trimesh.Trimesh(vertices=mesh.vertices.copy(), faces=mesh.faces.copy())
-    #         t2.visual.vertex_colors = mesh.visual.vertex_colors
-    #         s2 = trimesh.Scene(t2)
-    #         s2.apply_transform(r_quarter)
-    #         png2 = s2.save_image(resolution=[800,800], visible=True)
-    #         quarter_frames.append(np.array(Image.open(io.BytesIO(png2))))
-
-    #         t3 = trimesh.Trimesh(vertices=mesh.vertices.copy(), faces=mesh.faces.copy())
-    #         t3.visual.vertex_colors = mesh.visual.vertex_colors
-    #         s3 = trimesh.Scene(t3)
-    #         s3.apply_transform(r_half)
-    #         png3 = s3.save_image(resolution=[800,800], visible=True)
-    #         half_frames.append(np.array(Image.open(io.BytesIO(png3))))
-
-    #         t4 = trimesh.Trimesh(vertices=mesh.vertices.copy(), faces=mesh.faces.copy())
-    #         t4.visual.vertex_colors = mesh.visual.vertex_colors
-    #         s4 = trimesh.Scene(t4)
-    #         s4.apply_transform(r_three_quarter)
-    #         png4 = s4.save_image(resolution=[800,800], visible=True)
-    #         three_quarter_frames.append(np.array(Image.open(io.BytesIO(png4))))
-    #     except ZeroDivisionError:
-    #         print("zero divide")
-
-    # imageio.mimsave("energy_0.gif", frames, duration=0.2)
-    # imageio.mimsave("energy_90.gif", quarter_frames, duration=0.2)
-    # imageio.mimsave("energy_180.gif", half_frames, duration=0.2)
-    # imageio.mimsave("energy_270.gif", three_quarter_frames, duration=0.2)
-    # print("saved all views")
 
 
 if __name__ == "__main__":
