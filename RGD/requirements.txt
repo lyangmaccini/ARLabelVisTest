@@ -1,9 +1,0 @@
-numpy>=1.20.0
-scipy>=1.7.0
-matplotlib>=3.4.0
-
-# Optional for faster sparse linear algebra
-scikit-sparse>=0.4.6
-
-# Optional for interactive visualization
-pyvista>=0.35.0
