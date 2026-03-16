@@ -1,7 +1,7 @@
 from mesh_optimization import ColorSpaceTorchOptimizer
 import os
 import numpy as np
-from parallel_compute_binding import RGBToLAB, pointsToMesh, get_mesh_vertex_colors
+from main import RGBToLAB, pointsToMesh, get_mesh_vertex_colors
 import trimesh
 
 def get_LAB_mesh():

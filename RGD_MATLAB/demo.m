@@ -1,14 +1,14 @@
 
 clearvars; close all; clc;
 disp(pwd);
-filename = 'data\RGB2CIELAB_4_15';
+filename = 'data\RGB2CIELAB_1';
 x0 = 1;
 
 % Load mesh
 Mm = MeshClass(filename);
 
 %% Regularized - Dirichlet Energy
-alpha_hat0 = 0.30;
+alpha_hat0 = 0.05;
 
 % Initial computation
 u_D1 = rdg_ADMM(Mm, x0, 'alpha_hat', alpha_hat0);
@@ -17,13 +17,7 @@ writematrix(u_D1, 'u_D1.csv');
 num_iterations = Mm.nv;
 disp(num_iterations)
 max_indices = zeros(1, num_iterations);
-% See available cluster profiles
-% parallel.clusterProfiles
 
-% Check max workers for your profile
-% c = parcluster('local');
-% c.NumWorkers  % Shows max available
-% disp(feature('numcores'));
 
 % Start parallel pool (if not already started)
 % if isempty(gcp('nocreate'))
@@ -49,75 +43,11 @@ for i = 1:num_iterations
 end
 
 % Write to file at the end
-writematrix(max_indices,'max_indices_alpha_hat_03.txt');
-% clearvars; close all; clc;
-% disp(pwd);
-% % addpath(genpath('.'));
-% % addpath(fullfile('..', 'data'));
-% 
-% filename = 'data\RGB2CIELAB_4_15';
-% 
-% x0 = 1; % source point / set
-% 
-% 
-% % load mesh
-% Mm = MeshClass(filename);
-% 
-% %% Regularized - Dirichlet Energy
-% alpha_hat0 = 0.15; % scale invariant, represents the weight of the regularizer
-%                    % for Dirichlet regularizer - the size of the smoothing area
-% 
-% u_D1 = rdg_ADMM(Mm, x0, 'alpha_hat', alpha_hat0);
-% 
-% writematrix(u_D1, 'u_D1.csv');
-% num_iterations = 13299;
-% max_indices = zeros(1, num_iterations);
-% 
-% for i = 1:num_iterations
-%     % Find index of largest value
-%     u = rdg_ADMM(Mm, i, 'alpha_hat', alpha_hat0);
-%     u_copy = u;
-%     [max_val, max_idx] = max(u_copy);
-% 
-%     % Add to list
-%     max_indices(i) = max_idx;
-%     disp(i);
-% 
-% end
-% 
-% % Write to file at the end
-% writematrix(max_indices, filename + 'max_indices.txt');
+writematrix(max_indices,'max_indices_alpha_hat_05.txt');
 
-% u0 = rdg_ADMM(Mm, x0, 'alpha_hat', 0);               % No regularization
-% writematrix(u0, 'u0.csv');
-% u_D2 = rdg_ADMM(Mm, x0, 'alpha_hat', 3*alpha_hat0);  % Higher Regularization - Dirichlet Energy
-% writematrix(u_D2, 'u_D2.csv');
-% 
-% 
-% 
-% %% Regularized - Vector Field Alignment
+
 % % given directions:
-% given_vf_faces = [4736 2703];
-% given_vf_vals = [1.6256   -0.3518   -0.6234 ; 1.6952    0.3193    0.0335];
-% 
-% vf = zeros(Mm.nf,3);
-% vf(given_vf_faces,:) = given_vf_vals;
-% 
-% % interpolate vf to mesh
-% vf_int = smooth_vf(Mm, vf, 2);
-% 
-% % Optionally, scale the interpolated line field with a geodesic Gaussian
-% localize_vf = 1;
-% if localize_vf
-%     vf_faces_v = Mm.faces(given_vf_faces,:); vf_faces_v = vf_faces_v(:);
-%     dist_to_vf_faces = rdg_ADMM(Mm, vf_faces_v, 'alpha_hat', 0);
-%     sigma2 = sum(Mm.ta)/10^2; dist_vf_gaus = exp(-dist_to_vf_faces.^2/(2*sigma2));
-% 
-%     vf_int = Mm.interpulateVertices2Face(dist_vf_gaus).*vf_int;
-% end
-% 
-% 
-% % regularizers
+
 % alpha_hat = 0.05;
 % beta_hat = 100;
 % 
