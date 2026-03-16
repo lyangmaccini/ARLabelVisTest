@@ -1,27 +1,6 @@
-"""
-Optimized furthest_rgd implementation.
-
-Key speedups vs original:
-  1. KDTree replaces O(n^2) Python loops for nearest-neighbor queries
-  2. Pre-factorized ADMM: mesh-level matrices built once and shared
-  3. Source-specific Ww_p sliced and factorized per unique source (not per LAB point)
-  4. Optional parallel execution via joblib
-"""
-
 import numpy as np
-import scipy.sparse as sp
 from scipy.spatial import KDTree
-from scipy.sparse.linalg import factorized
-from joblib import Parallel, delayed
-# from RGD.rgd_admm import rgd_admm
-
-from RGD_NEW.mesh_class import MeshClass
-from RGD_NEW.rgd_admm import rgd_admm
-
-
-# ---------------------------------------------------------------------------
-# Nearest-neighbor helpers
-# ---------------------------------------------------------------------------
+import math
 
 def closest_vertices_batch(lab_points: np.ndarray, mesh_tree: KDTree) -> np.ndarray:
     """For each LAB point, return the index of the closest mesh vertex."""
@@ -34,17 +13,19 @@ def closest_labs_batch(mesh_vertices: np.ndarray, lab_tree: KDTree) -> np.ndarra
     _, indices = lab_tree.query(mesh_vertices)
     return indices.astype(int)
 
+def euclidean_distance(p1, p2):
+    return math.sqrt((p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2 + (p1[2] - p2[2]) ** 2)
 
-def furthest_rgd(mesh, allPoints, allRGBs):
+def furthest_rgd(vertices, allPoints, allRGBs):
     allPoints = np.asarray(allPoints, dtype=float)
     allRGBs = np.asarray(allRGBs)
 
     print("Building KDTrees...")
-    mesh_tree = KDTree(mesh.vertices)
+    mesh_tree = KDTree(vertices)
     lab_tree = KDTree(allPoints)
     LABtoVertices = closest_vertices_batch(allPoints, mesh_tree)
-    VerticestoLAB = closest_labs_batch(mesh.vertices, lab_tree)
-    print(f"  {len(allPoints)} LAB points <-> {mesh.nv} mesh vertices mapped")
+    VerticestoLAB = closest_labs_batch(vertices, lab_tree)
+    print(f"  {len(allPoints)} LAB points <-> {len(vertices)} mesh vertices mapped")
 
     unique_sources = np.unique(LABtoVertices)
     n_unique = len(unique_sources)
@@ -65,6 +46,40 @@ def furthest_rgd(mesh, allPoints, allRGBs):
         else:
             furthest_vert = 0
             print("out of bounds")
+        furthest_lab = VerticestoLAB[int(furthest_vert)]
+        furthestRGBs.append(allRGBs[int(furthest_lab)])
+
+    return np.array(furthestRGBs)
+
+
+def furthest_euclidean_old(vertices, allPoints, allRGBS):
+    allPoints = np.asarray(allPoints, dtype=float)
+    allRGBs = np.asarray(allRGBs)
+
+    print("Building KDTrees...")
+    mesh_tree = KDTree(vertices)
+    lab_tree = KDTree(allPoints)
+    LABtoVertices = closest_vertices_batch(allPoints, mesh_tree)
+    VerticestoLAB = closest_labs_batch(vertices, lab_tree)
+    print(f"  {len(allPoints)} LAB points <-> {len(vertices)} mesh vertices mapped")
+
+    unique_sources = np.unique(LABtoVertices)
+    n_unique = len(unique_sources)
+
+    print(f"Finding furthest for {n_unique} unique sources ({len(allPoints)} LAB points)...")
+
+    furthestRGBs = []
+
+    for i in range(allPoints.shape[0]):
+        vert = LABtoVertices[i]
+        furthest_vert = 0
+        furthest_dist = -1
+        for i, mesh_vertex in enumerate(vertices):
+            euclidean_dist = euclidean_distance(mesh_vertex, vert)
+            if euclidean_dist > furthest_dist:
+                furthest_dist = euclidean_dist
+                furthest_vert = i
+
         furthest_lab = VerticestoLAB[int(furthest_vert)]
         furthestRGBs.append(allRGBs[int(furthest_lab)])
 
@@ -155,15 +170,11 @@ def plot_geodesic_field(mesh, distances,
 import pyvista as pv
 
 
-def plot_geodesic_field_pyvista(mesh,
+def plot_geodesic_field_pyvista(V, F,
                                 distances,
                                 source_idx=None,
                                 furthest_idx=None,
                                 cmap="plasma"):
-
-    V = mesh.vertices
-    F = mesh.faces
-
     # Convert faces to PyVista format
     # PyVista expects: [3, v0, v1, v2, 3, v0, v1, v2, ...]
     faces_pv = np.hstack(

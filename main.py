@@ -9,19 +9,20 @@ import trimesh
 import math
 from PIL import Image
 import io
-from RGD.mesh import Mesh
 import alphashape
-from RGD_CUDA.furthest_rgd_fast import plot_geodesic_field_pyvista
+from utils.distances import plot_geodesic_field_pyvista
 
 import matplotlib.pyplot as plt
 from enum import Enum
-from RGD_NEW.mesh_class import MeshClass
 from utils.color_spaces import RGBtoOKLAB, RGBtoOKLCH
 
-from RGD_CUDA.furthest_rgd_fast import furthest_rgd
+from utils.distances import furthest_rgd
 
 from interpolate import interpolate_files
 import pyvista as pv
+from utils.files import read_off, save_off_file
+
+from utils.color_spaces import RGBtoLAB
 
 class Mode(Enum):
     RGD = 1
@@ -50,33 +51,9 @@ class SmoothingMethod(Enum):
     ELLIPSE = 1,
     NEURAL_BOUNDING = 2,
     PYTORCH = 3
-
-def RGBToLAB(RGB):
-    RGB = np.array(RGB) / 255.0
-    mask = RGB > 0.04045
-
-    RGB[mask] = ((RGB[mask] + 0.055) / 1.055) ** 2.4
-    RGB[~mask] /= 12.92
-    RGB *= 100
-
-
-    XYZ = np.dot(RGB, np.array([[0.4124, 0.3576, 0.1805],
-                                [0.2126, 0.7152, 0.0722],
-                                [0.0193, 0.1192, 0.9505]]))
-
-    XYZ /= np.array([95.047, 100.0, 108.883])
-    mask = XYZ > 0.008856
-    XYZ[mask] = XYZ[mask] ** (1/3)
-    XYZ[~mask] = (7.787 * XYZ[~mask]) + (16/116)
-
-    L = (116 * XYZ[:, 1]) - 16
-    a = 500 * (XYZ[:, 0] - XYZ[:, 1])
-    b = 200 * (XYZ[:, 1] - XYZ[:, 2])
-
-    return np.stack([L, a, b], axis=1)
     
 def findPointAtMaxDistance(inputRGB, allLABPoints):
-    inputLAB = RGBToLAB([inputRGB])[0]
+    inputLAB = RGBtoLAB([inputRGB])[0]
     allLABPoints = np.array(allLABPoints)
 
     distances = deltaE_cie76(np.tile(inputLAB, (len(allLABPoints), 1)), allLABPoints)
@@ -112,13 +89,16 @@ def save_views(mesh: trimesh.Trimesh):
     save_single_view(mesh, r_half, "half_view")
     save_single_view(mesh, r_three_quarter, "three_quarter_view")
 
+def euclidean_distance(p1, p2):
+    return math.sqrt((p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2 + (p1[2] - p2[2]) ** 2)
+
 def get_mesh_vertex_colors(mesh, allLABs, allRGBs):
     colors = []
     for vert in mesh.vertices:
         best_idx = 0
-        best_distance = dist(vert, allLABs[0])
+        best_distance = euclidean_distance(vert, allLABs[0])
         for i, lab in enumerate(allLABs):
-            distance = dist(vert, lab)
+            distance = euclidean_distance(vert, lab)
             if distance < best_distance:
                 best_idx = i
                 best_distance = distance
@@ -135,21 +115,10 @@ def generate_LABs(stepSize = 16):
     print(len(range(0, 257, stepSize)))
     allRGBs = np.where(allRGBs < 0, 0, allRGBs)
     allRGBs = np.where(allRGBs > 255, 255, allRGBs)
-    allLABs = RGBToLAB(allRGBs)
+    allLABs = RGBtoLAB(allRGBs)
     print("LABs shape: " + str(allLABs.shape))
     return allRGBs, allLABs
 
-def save_off_file(filename, mesh):
-    if filename.split("/")[0] != "data":
-        filename = "data/" + filename
-    off_data = trimesh.exchange.off.export_off(mesh)
-    # print("hello")
-    with open(filename, "w") as f:
-        f.write(off_data)
-    print("Saved to " + filename)
-
-def euclidean_distance(p1, p2):
-    return math.sqrt((p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2 + (p1[2] - p2[2]) ** 2)
 
 def plot_lab_points_3d(allLABs, furthestRGBs=None, furthest_matlab=None, subsample=1):
     allLABs = np.asarray(allLABs)
@@ -196,30 +165,7 @@ def plot_lab_points_3d(allLABs, furthestRGBs=None, furthest_matlab=None, subsamp
     plt.tight_layout()
     plt.show()
 
-def furthest_euclidean_old(mesh:Mesh, allLABS, allRGBs, num=1):
-    def closest_vertex(lab, num=1):
-        # would have to modify for higher number of points for distance
-        closest_vert = 0
-        closest_dist = 1000000
-        for i, mesh_vertex in enumerate(mesh.vertices):
-            # print(mesh_vertex)
-            # print(lab)
-            euclidean_dist = euclidean_distance(mesh_vertex, lab)
-            if euclidean_dist < closest_dist:
-                closest_dist = euclidean_dist
-                closest_vert = i
-        return closest_vert
-    
-    furthest = []
 
-    LABtoVertices = [] # closest vertex (index) to each LAB point
-    for lab in allLABS:
-        LABtoVertices.append(closest_vertex(lab))
-    LABtoVertices = np.array(LABtoVertices)
-    print("closest vertices found")
-        
-    furthest = np.array(furthest)
-    return furthest
 
 def assign_vertex_colors(mesh:trimesh.Trimesh, allLABs, furthest):
     colors = []
@@ -238,7 +184,7 @@ def assign_vertex_colors(mesh:trimesh.Trimesh, allLABs, furthest):
 def resample(filename, count=500):
     if filename.split("/")[0] != "data":
         filename = "data/" + filename
-    vertices, faces = Mesh.verts_from_file(filename)
+    vertices, faces = read_off(filename)
     # plot_lab_points_3d(vertices)
     mesh = trimesh.Trimesh(vertices=vertices, faces=faces)
     sampled_vertices, face_indices = trimesh.sample.sample_surface_even(mesh, count) # consider adding a seed for consistentcy?
@@ -336,12 +282,8 @@ def main():
 
     original_path = f"data/RGB2{space}_{interval}.off"
 
-    original_LAB_path = f"data/RGB2CIELAB_{interval}.off"
-    original_OKLAB_path = f"data/RGB2OKLAB_{interval}.off"
-    original_OKLCH_path = f"data/RGB2OKLCH_{interval}.off"
-
     saved_furthest_path = f"data/MATLAB_FurthestRGB_From{space}_{interval}_resampled.txt"
-    matlab_path = f"data/max_indices_{space}_matlab.txt"
+    matlab_path = f"data/max_indices_{space}_{interval}_matlab.txt"
 
     allRGBs, allLABs = generate_LABs(stepSize=interval)
 
@@ -355,7 +297,8 @@ def main():
     mode = Mode.MESH_FILE
 
     if mode is Mode.RGD:
-        furthest = furthest_rgd(Mesh.from_file(original_path), allPoints, allRGBs)
+        vertices, faces = read_off(original_path)
+        furthest = furthest_rgd(vertices, allPoints, allRGBs)
         print(furthest)
         print(furthest.shape)
         plot_lab_points_3d(allLABs, furthestRGBs=furthest)
@@ -388,10 +331,9 @@ def main():
         matlab_test_path = "data/u_D1.csv"
         point_test_path = 'data/RGB2OKLAB_1.off'
         dist = np.loadtxt(matlab_test_path)
-        vertices, faces = MeshClass.read_off(point_test_path)
-        mesh = MeshClass(vertices, faces)
+        vertices, faces = read_off(point_test_path)
         furthest_idx =  int(np.argmax(dist))
-        plot_geodesic_field_pyvista(mesh, dist, source_idx=0, furthest_idx=furthest_idx)
+        plot_geodesic_field_pyvista(vertices, faces, dist, source_idx=0, furthest_idx=furthest_idx)
 
 if __name__ == "__main__":
     main()
