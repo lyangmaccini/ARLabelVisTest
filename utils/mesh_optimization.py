@@ -1,10 +1,10 @@
 import numpy as np
-import alphashape
+# import alphashape
 import trimesh
 # import torch
-from tqdm import tqdm
-from scipy.optimize import minimize
-import pyvista as pv
+# from tqdm import tqdm
+# from scipy.optimize import minimize
+# import pyvista as pv
 # import open3d as o3d
 from utils.points_to_mesh import build_gamut_mesh
 # import kaolin as kal
@@ -22,15 +22,15 @@ from utils.points_to_mesh import build_gamut_mesh
 #         print("WARNING WARNING: LAB mesh is not watertight")
 #     return mesh
 
-def pointsToMesh(allLABs):
+def pointsToMesh(allLABs, sigma=1.25, vox=256):
     # mesh = trimesh.convex.convex_hull(allLABs)
-
+    # default sigm
     mesh = build_gamut_mesh(
         allLABs,
-        vox_res=128,           # increase to 256 for full 16.7M point cloud
-        smooth_sigma=1.5,
+        vox_res=vox,           # increase to 256 for full 16.7M point cloud
+        smooth_sigma=sigma,
         target_faces=50_000,
-        smooth_iterations=10,
+        # smooth_iterations=10,
     )
 
     return mesh
@@ -43,6 +43,209 @@ def insideMesh(point: np.array, mesh: trimesh.Trimesh):
     # still need to check for points on the mesh surface 
     # print(containment.shape)
     return containment[0]
+
+
+import torch
+import torch.nn.functional as F
+import numpy as np
+import trimesh
+
+
+# ─────────────────────────────────────────────
+# SDF grid (precomputed, used for inside-check)
+# ─────────────────────────────────────────────
+
+# def build_sdf_grid(mesh: trimesh.Trimesh, resolution: int = 64):
+#     """
+#     Precompute a signed distance field on a uniform grid.
+#     Convention: negative = inside mesh, positive = outside.
+#     """
+#     bounds_min = mesh.bounds[0].copy()
+#     bounds_max = mesh.bounds[1].copy()
+#     padding = (bounds_max - bounds_min) * 0.05
+#     bounds_min -= padding
+#     bounds_max += padding
+
+#     lin = [np.linspace(bounds_min[i], bounds_max[i], resolution) for i in range(3)]
+#     xx, yy, zz = np.meshgrid(*lin, indexing="ij")
+#     pts = np.stack([xx.ravel(), yy.ravel(), zz.ravel()], axis=1)
+
+#     _, distances, _ = trimesh.proximity.closest_point(mesh, pts)
+#     signs = np.where(mesh.contains(pts), -1.0, 1.0)
+#     sdf = (distances * signs).reshape(resolution, resolution, resolution).astype(np.float32)
+
+#     return torch.tensor(sdf), bounds_min, bounds_max
+def build_sdf_grid(mesh: trimesh.Trimesh, resolution: int = 64):
+    bounds_min = mesh.bounds[0].copy()
+    bounds_max = mesh.bounds[1].copy()
+    padding = (bounds_max - bounds_min) * 0.05
+    bounds_min -= padding
+    bounds_max += padding
+
+    lin = [np.linspace(bounds_min[i], bounds_max[i], resolution) for i in range(3)]
+    xx, yy, zz = np.meshgrid(*lin, indexing="ij")
+    pts = np.stack([xx.ravel(), yy.ravel(), zz.ravel()], axis=1).astype(np.float32)
+
+    chunk_size = 10_000
+    distances = np.empty(len(pts), dtype=np.float32)
+    signs     = np.empty(len(pts), dtype=np.float32)
+    print("len")
+    print(len(pts))
+    for start in range(0, len(pts), chunk_size):
+        end   = min(start + chunk_size, len(pts))
+        print(end)
+        chunk = pts[start:end]
+        _, d, _ = trimesh.proximity.closest_point(mesh, chunk)
+        distances[start:end] = d.astype(np.float32)
+        signs[start:end]     = np.where(mesh.contains(chunk), -1.0, 1.0)
+
+    sdf = (distances * signs).reshape(resolution, resolution, resolution)
+    return torch.tensor(sdf), bounds_min, bounds_max
+
+
+def query_sdf(vertices: torch.Tensor, sdf_grid: torch.Tensor,
+              bounds_min: np.ndarray, bounds_max: np.ndarray) -> torch.Tensor:
+    """
+    Differentiable SDF query via trilinear interpolation (torch grid_sample).
+    Returns SDF value at each vertex position; negative = inside, positive = outside.
+    """
+    bmin = torch.tensor(bounds_min, dtype=torch.float32, device=vertices.device)
+    bmax = torch.tensor(bounds_max, dtype=torch.float32, device=vertices.device)
+
+    # Normalize vertex positions to [-1, 1] for grid_sample
+    coords = 2.0 * (vertices - bmin) / (bmax - bmin) - 1.0  # (V, 3)
+
+    # grid_sample 3D expects input  (N, C, D, H, W)  with axes (z, y, x)
+    # sdf_grid is (R_x, R_y, R_z)  →  permute to (R_z, R_y, R_x)
+    sdf_in = sdf_grid.permute(2, 1, 0).unsqueeze(0).unsqueeze(0).to(vertices.device)
+    grid   = coords.view(1, 1, 1, -1, 3)   # (1, 1, 1, V, xyz)
+
+    out = F.grid_sample(sdf_in, grid, mode="bilinear",
+                        align_corners=True, padding_mode="border")
+    return out.view(-1)  # (V,)
+
+
+# ─────────────────────────────────────────────
+# Laplacian (graph smoothness operator)
+# ─────────────────────────────────────────────
+
+def build_laplacian(mesh: trimesh.Trimesh) -> torch.Tensor:
+    """
+    Normalised graph Laplacian as a sparse COO tensor.
+    (Lv)[i] = v[i] - mean(v[neighbours of i])
+    When ||Lv||² = 0 the mesh is perfectly smooth.
+    """
+    n = len(mesh.vertices)
+    edges = mesh.edges_unique           # (E, 2), undirected
+
+    src = np.concatenate([edges[:, 0], edges[:, 1]])
+    dst = np.concatenate([edges[:, 1], edges[:, 0]])
+    degree = np.bincount(src, minlength=n).astype(np.float32)
+
+    off_diag_vals = -1.0 / degree[src]  # -1/deg for each off-diagonal entry
+    diag_vals     = np.ones(n, dtype=np.float32)
+
+    rows = np.concatenate([src, np.arange(n)])
+    cols = np.concatenate([dst, np.arange(n)])
+    vals = np.concatenate([off_diag_vals, diag_vals])
+
+    idx = torch.tensor(np.stack([rows, cols]), dtype=torch.long)
+    val = torch.tensor(vals, dtype=torch.float32)
+    return torch.sparse_coo_tensor(idx, val, (n, n)).coalesce()
+
+
+# ─────────────────────────────────────────────
+# Differentiable mesh volume
+# ─────────────────────────────────────────────
+
+def mesh_volume(vertices: torch.Tensor, faces: torch.Tensor) -> torch.Tensor:
+    """
+    Signed volume via the divergence theorem:
+      V = (1/6) Σ_f  v0 · (v1 × v2)
+    Requires consistently outward-oriented faces (trimesh guarantees this).
+    """
+    v0 = vertices[faces[:, 0]]
+    v1 = vertices[faces[:, 1]]
+    v2 = vertices[faces[:, 2]]
+    return torch.abs((v0 * torch.cross(v1, v2, dim=1)).sum() / 6.0)
+
+
+# ─────────────────────────────────────────────
+# Main optimiser
+# ─────────────────────────────────────────────
+
+def optimize_mesh(
+    original_mesh: trimesh.Trimesh,
+    n_iters:       int   = 1000,
+    lr:            float = 1e-3,
+    w_smooth:      float = 1.0,    # weight: Laplacian smoothness
+    w_inside:      float = 100.0,  # weight: stay inside original mesh
+    w_volume:      float = 0.1,    # weight: maximise volume
+    sdf_resolution: int  = 64,     # higher = tighter inside constraint
+) -> trimesh.Trimesh:
+    """
+    Optimises the vertex positions of `original_mesh` to:
+      1. Be smoother (minimise Laplacian energy)
+      2. Stay strictly inside the original mesh (SDF penalty)
+      3. Maximise enclosed volume
+    Topology (faces) is kept fixed throughout.
+    """
+    # --- Precompute ---
+    print("Building SDF grid …")
+    sdf_grid, bounds_min, bounds_max = build_sdf_grid(original_mesh, sdf_resolution)
+
+    print("Building Laplacian …")
+    L = build_laplacian(original_mesh)
+
+    faces = torch.tensor(original_mesh.faces, dtype=torch.long)
+    verts = torch.tensor(original_mesh.vertices.copy(),
+                         dtype=torch.float32, requires_grad=True)
+
+    optimizer = torch.optim.Adam([verts], lr=lr)
+    # Gradually cool the learning rate so fine details settle
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, n_iters)
+
+    initial_vol = mesh_volume(verts.detach(), faces).item()
+    print(f"Initial volume : {initial_vol:.6f}")
+
+    # --- Optimisation loop ---
+    for i in range(n_iters):
+        optimizer.zero_grad()
+
+        # 1. Smoothness loss  ── penalise each vertex deviating from neighbour mean
+        Lv          = torch.sparse.mm(L, verts)         # (V, 3)
+        smooth_loss = (Lv ** 2).mean()
+
+        # 2. Inside-mesh loss ── penalise vertices that have drifted outside
+        sdf_vals    = query_sdf(verts, sdf_grid, bounds_min, bounds_max)
+        inside_loss = F.relu(sdf_vals).pow(2).mean()    # zero when fully inside
+
+        # 3. Volume loss      ── maximise → minimise negative volume
+        #    Normalised by initial volume so the scale is ~1 at the start
+        vol         = mesh_volume(verts, faces)
+        vol_loss    = -(vol / initial_vol)
+
+        loss = w_smooth * smooth_loss + w_inside * inside_loss + w_volume * vol_loss
+        loss.backward()
+
+        optimizer.step()
+        scheduler.step()
+
+        if i % 100 == 0:
+            print(f"[{i:5d}/{n_iters}]  "
+                  f"loss={loss.item():9.5f}  "
+                  f"smooth={smooth_loss.item():.5f}  "
+                  f"inside={inside_loss.item():.5f}  "
+                  f"vol={vol.item():.5f}")
+
+    # --- Return result as a new trimesh ---
+    final_verts = verts.detach().cpu().numpy()
+    result = trimesh.Trimesh(vertices=final_verts,
+                             faces=original_mesh.faces,
+                             process=False)
+
+    print(f"Final volume   : {mesh_volume(verts.detach(), faces).item():.6f}")
+    return result
 
 
 # def meshVolume(vertices: torch.Tensor, faces: torch.Tensor):

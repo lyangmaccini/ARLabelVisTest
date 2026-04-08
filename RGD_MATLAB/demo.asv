@@ -1,8 +1,8 @@
 
 clearvars; close all; clc;
 disp(pwd);
-filename = 'RGB2OKLAB_1_sigma_4o0_vox_256';
-final_file = 'max_indices_oklab_1_RGD_05_sigma_4o0_vox_256.txt';
+filename = 'RGB2CIELAB_1';
+final_file = 'max_indices_cielab_1_RGD_05_next.txt';
 x0 = 1;
 
 % Load mesh
@@ -28,10 +28,8 @@ parfor i = 1:num_iterations
     [~, max_idx] = max(u);
     
     max_indices(i) = max_idx;
-    if mod(i,1000) == 0
-        disp(i);
-    end
+
+    disp(i);
 end
 
 writematrix(max_indices, final_file);
-disp(final_file);

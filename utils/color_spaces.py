@@ -47,34 +47,57 @@ def XYZtoLAB(XYZ):
 
     return np.stack([L, a, b], axis=1)
 
+# def RGBtoLAB(RGB):
+#     linearRGB = RGBtoLinear(RGB)
+#     XYZ = RGBtoXYZ(linearRGB)
+#     return XYZtoLAB(XYZ)
+
 def RGBtoLAB(RGB):
-    linearRGB = RGBtoLinear(RGB)
-    XYZ = RGBtoXYZ(linearRGB)
-    return XYZtoLAB(XYZ)
+    # RGB = np.array(RGB) / 255.0
+    # mask = RGB > 0.04045
 
-# def RGBToLAB(RGB):
-#     RGB = np.array(RGB) / 255.0
-#     mask = RGB > 0.04045
-
-#     RGB[mask] = ((RGB[mask] + 0.055) / 1.055) ** 2.4
-#     RGB[~mask] /= 12.92
-#     RGB *= 100
+    # RGB[mask] = ((RGB[mask] + 0.055) / 1.055) ** 2.4
+    # RGB[~mask] /= 12.92
+    # RGB *= 100
 
 
-#     XYZ = np.dot(RGB, np.array([[0.4124, 0.3576, 0.1805],
-#                                 [0.2126, 0.7152, 0.0722],
-#                                 [0.0193, 0.1192, 0.9505]]))
+    # XYZ = np.dot(RGB, np.array([[0.4124, 0.3576, 0.1805],
+    #                             [0.2126, 0.7152, 0.0722],
+    #                             [0.0193, 0.1192, 0.9505]]))
 
-#     XYZ /= np.array([95.047, 100.0, 108.883])
-#     mask = XYZ > 0.008856
-#     XYZ[mask] = XYZ[mask] ** (1/3)
-#     XYZ[~mask] = (7.787 * XYZ[~mask]) + (16/116)
+    # XYZ /= np.array([95.047, 100.0, 108.883])
+    # mask = XYZ > 0.008856
+    # XYZ[mask] = XYZ[mask] ** (1/3)
+    # XYZ[~mask] = (7.787 * XYZ[~mask]) + (16/116)
 
-#     L = (116 * XYZ[:, 1]) - 16
-#     a = 500 * (XYZ[:, 0] - XYZ[:, 1])
-#     b = 200 * (XYZ[:, 1] - XYZ[:, 2])
+    # L = (116 * XYZ[:, 1]) - 16
+    # a = 500 * (XYZ[:, 0] - XYZ[:, 1])
+    # b = 200 * (XYZ[:, 1] - XYZ[:, 2])
 
-#     return np.stack([L, a, b], axis=1)
+    # return np.stack([L, a, b], axis=1)
+    print("here")
+    RGB = np.array(RGB) / 255.0
+    mask = RGB > 0.04045
+
+    RGB[mask] = ((RGB[mask] + 0.055) / 1.055) ** 2.4
+    RGB[~mask] /= 12.92
+    RGB *= 100
+
+
+    XYZ = np.dot(RGB, np.array([[0.4124, 0.3576, 0.1805],
+                                [0.2126, 0.7152, 0.0722],
+                                [0.0193, 0.1192, 0.9505]]))
+
+    XYZ /= np.array([95.047, 100.0, 108.883])
+    mask = XYZ > 0.008856
+    XYZ[mask] = XYZ[mask] ** (1/3)
+    XYZ[~mask] = (7.787 * XYZ[~mask]) + (16/116)
+
+    L = (116 * XYZ[:, 1]) - 16
+    a = 500 * (XYZ[:, 0] - XYZ[:, 1])
+    b = 200 * (XYZ[:, 1] - XYZ[:, 2])
+
+    return np.stack([L, a, b], axis=1)
 
 def RGBtoOKLCH(RGB):
     print(RGB.shape)

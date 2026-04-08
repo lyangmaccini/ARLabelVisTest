@@ -14,7 +14,7 @@ function [vertices,faces] = readOff(filename)
 %       Number of vertices in a face should be 3 or 4
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-
+disp("helaslo");
 fid = fopen(filename,'r');
 if( fid==-1 )
 	error('Can''t open the file.');

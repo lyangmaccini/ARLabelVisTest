@@ -7,50 +7,56 @@ import pyvista as pv
 from utils.mesh_optimization import pointsToMesh
 import trimesh
 import math
-from PIL import Image
+# from PIL import Image
 import io
-import alphashape
+# import alphashape
 from utils.distances import plot_geodesic_field_pyvista
 
 import matplotlib.pyplot as plt
 from enum import Enum
 from utils.color_spaces import RGBtoOKLAB, RGBtoOKLCH
 
-from utils.distances import furthest_rgd
+from utils.distances import furthest_rgd, furthest_euclidean
 
-from interpolate import interpolate_files
-import pyvista as pv
+from utils.interpolate import interpolate_interval, interpolate_files_old
 from utils.files import read_off, save_off_file
 
 from utils.color_spaces import RGBtoLAB
+from utils.distances import euclidean_distance
+from utils.binding import bindLABtoSphere, bindToNeuralBounding, bindToOptimizedMeshBinding
+from utils.voxels import writeVoxels
+
+from utils.mesh_optimization import optimize_mesh
 
 class Mode(Enum):
-    RGD = 1
-    RESAMPLE = 2
-    SHOW_PLOT = 3
-    SHOW_MESH = 4
-    TO_FILE = 5
+    RGD = 1,
+    RESAMPLE = 2,
+    SHOW_PLOT = 3,
+    SHOW_MESH = 4,
+    TO_FILE = 5,
     MESH_FILE = 6,
     TEST_MATLAB = 7,
     OKLAB_FILE = 8,
     OKLCH_FILE = 9,
     INTERPOLATE = 10,
-    FULL = 11
+    FULL = 11,
+    SMOOTH_MESH = 12,
+    TO_VOXELS = 13,
 
 class ColorSpace(Enum):
     CIELAB = 1,
     RGB = 2,
     OKLAB = 3,
-    OKLCH = 4
 
 class DistanceMeasure(Enum):
     EUCLIDEAN = 1,
     RGD = 2
 
 class SmoothingMethod(Enum):
-    ELLIPSE = 1,
+    SPHERE = 1,
     NEURAL_BOUNDING = 2,
-    PYTORCH = 3
+    PYTORCH = 3,
+    GAUSSIAN = 4
     
 def findPointAtMaxDistance(inputRGB, allLABPoints):
     inputLAB = RGBtoLAB([inputRGB])[0]
@@ -77,8 +83,8 @@ def save_single_view(mesh, rotation_matrix, filename):
     mesh_copy.visual.vertex_colors = mesh.visual.vertex_colors
     s = trimesh.Scene(mesh)
     s.apply_transform(rotation_matrix)
-    png = s.save_image(resolution=[800,800], visible=True)
-    Image.open(io.BytesIO(png)).save(filename + ".png")
+    # png = s.save_image(resolution=[800,800], visible=True)
+    # Image.open(io.BytesIO(png)).save(filename + ".png")
 
 def save_views(mesh: trimesh.Trimesh):
     r_quarter = trimesh.transformations.rotation_matrix(np.pi/2.0, [0, 1, 0])
@@ -88,9 +94,6 @@ def save_views(mesh: trimesh.Trimesh):
     save_single_view(mesh, r_quarter, "quarter_view")
     save_single_view(mesh, r_half, "half_view")
     save_single_view(mesh, r_three_quarter, "three_quarter_view")
-
-def euclidean_distance(p1, p2):
-    return math.sqrt((p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2 + (p1[2] - p2[2]) ** 2)
 
 def get_mesh_vertex_colors(mesh, allLABs, allRGBs):
     colors = []
@@ -118,7 +121,6 @@ def generate_LABs(stepSize = 16):
     allLABs = RGBtoLAB(allRGBs)
     print("LABs shape: " + str(allLABs.shape))
     return allRGBs, allLABs
-
 
 def plot_lab_points_3d(allLABs, furthestRGBs=None, furthest_matlab=None, subsample=1):
     allLABs = np.asarray(allLABs)
@@ -165,8 +167,6 @@ def plot_lab_points_3d(allLABs, furthestRGBs=None, furthest_matlab=None, subsamp
     plt.tight_layout()
     plt.show()
 
-
-
 def assign_vertex_colors(mesh:trimesh.Trimesh, allLABs, furthest):
     colors = []
     for vertex in mesh.vertices:
@@ -190,10 +190,10 @@ def resample(filename, count=500):
     sampled_vertices, face_indices = trimesh.sample.sample_surface_even(mesh, count) # consider adding a seed for consistentcy?
 
     # resampled = mesh.simplify_quadric_decimation(count)
-    shape = alphashape.alphashape(sampled_vertices, alpha=0.01)
+    # shape = alphashape.alphashape(sampled_vertices, alpha=0.01)
     # print(resampled.vertices.shape)
     # print(shape.vertices.shape)
-    mesh = trimesh.Trimesh(vertices=shape.vertices, faces=shape.faces)
+    # mesh = trimesh.Trimesh(vertices=shape.vertices, faces=shape.faces)
     # mesh.show()
     plot_lab_points_3d(mesh.vertices)
     print(mesh.vertices.shape)
@@ -277,38 +277,65 @@ def main():
     n_processes = num_cpus - 4 # Change this to use more/less CPUs. 
     print("Number of CPUs:", num_cpus, "Number of CPUs we are using:", n_processes)
 
-    interval = 4
-    space = "CIELAB"
+    interval = 1
+    space = "OKLAB"
+    distance_measure = "RGD"
+    alpha = "05"
+    voxel_dim = 256
+    sigma = 4.0
+    vox = 256
+    str_sigma = str(sigma).replace(".", "o")
 
-    original_path = f"data/RGB2{space}_{interval}.off"
+    # neural, sphere, pytorch, none (gaussian?)
+    smoothing_mode = "neural"
 
-    saved_furthest_path = f"data/MATLAB_FurthestRGB_From{space}_{interval}_resampled.txt"
-    matlab_path = f"data/max_indices_{space}_{interval}_matlab.txt"
+    original_path = f"RGD_MATLAB/RGB2{space}_{interval}_sigma_{str_sigma}_vox_{vox}.off"
+    # original_path = f"RGD_MATLAB/RGB2{space}_{smoothing_mode}_{interval}.off"
+    matlab_path = f"RGD_MATLAB/max_indices_{space}_{interval}_{distance_measure}_{alpha}_sigma_{str_sigma}_vox_{vox}.txt"
+    # matlab_path = f"RGD_MATLAB/max_indices_{space}_{interval}_{distance_measure}_{alpha}_{smoothing_mode}_{voxel_dim}.txt"
+
+    final_LAB_filepath = f"AllCandidateLABvals_{space}_{interval}_{distance_measure}_{alpha}_sigma_{str_sigma}_vox_{vox}.txt"
+    # final_LAB_filepath = f"AllCandidateLABvals_{space}_{interval}_{distance_measure}_{alpha}_{smoothing_mode}_{voxel_dim}.txt"
+
+    LAB_file = f"CandidateLABvals_MATLAB_{space}_{interval}_{distance_measure}_{alpha}.txt"
+    RGB_file = f"CorrespondingRGBVals_MATLAB_{space}_{interval}_{distance_measure}_{alpha}.txt"
+
+    saved_furthest_path = f"data/MATLAB_FurthestRGB_From{space}_{interval}_{distance_measure}_{alpha}.txt"
+
+    smoothed_path = f"RGD_MATLAB/RGB2{space}_{smoothing_mode}_{interval}.off"
+    binvox_filepath = f"neural_bounding/data/3D/{space}_{interval}_{str(voxel_dim)}.binvox"
+    neural_bounded_filepath = f"data/neural_bounding_{space}_{voxel_dim}.binvox"
 
     allRGBs, allLABs = generate_LABs(stepSize=interval)
 
     if space == "OKLAB":
         allPoints = RGBtoOKLAB(allRGBs)
-    elif space == "OKLCH":
-        allPoints = RGBtoOKLCH(allRGBs)
+    elif space == "RGB":
+        allPoints = allRGBs
     else:
         allPoints = allLABs
 
+
+    # mode = Mode.RGD
+    # mode = Mode.TO_FILE
+    # mode = Mode.INTERPOLATE
+
+    # mode = Mode.FULL
     mode = Mode.MESH_FILE
+    # mode = Mode.SMOOTH_MESH
+    # mode = Mode.TO_VOXELS
 
     if mode is Mode.RGD:
         vertices, faces = read_off(original_path)
-        furthest = furthest_rgd(vertices, allPoints, allRGBs)
+        furthest = furthest_rgd(vertices, allPoints, allRGBs, matlab_path)
         print(furthest)
         print(furthest.shape)
-        plot_lab_points_3d(allLABs, furthestRGBs=furthest)
+        # plot_lab_points_3d(allLABs[::4], furthestRGBs=furthest[::4])
         np.savetxt(saved_furthest_path, furthest, fmt='%d')
         print("Saved furthest RGB values at interval: " + str(interval))
 
     elif mode is Mode.TO_FILE:
         furthest = np.loadtxt(saved_furthest_path, dtype=int)
-        LAB_file = f"CandidateLABvals_MATLAB_{space}_{interval}.txt"
-        RGB_file = f"CorrespondingRGBVals_MATLAB_{space}_{interval}.txt"
         with open(LAB_file, "w") as f, open(RGB_file, "w") as f2:
             for lab, rgb in zip(furthest.tolist(), allRGBs.tolist()):
                 f.write(f"{lab[0]},{lab[1]},{lab[2]}\n")
@@ -323,17 +350,62 @@ def main():
         print("Showed furthest RGBs in mesh")
 
     elif mode is Mode.MESH_FILE:
-        mesh = pointsToMesh(allPoints)
-        # save_off_file(original_path, mesh)
+        # plot_lab_points_3d(allPoints)
+        mesh = pointsToMesh(allPoints, sigma=sigma, vox=vox)
+        save_off_file(original_path, mesh)
         show_original_mesh_pyvista(mesh, show_edges=True, show_normals=False)
 
     elif mode is Mode.TEST_MATLAB:
-        matlab_test_path = "data/u_D1.csv"
-        point_test_path = 'data/RGB2OKLAB_1.off'
+        matlab_test_path = "RGD_MATLAB/u_D1.csv"
+        point_test_path = f'RGD_MATLAB/RGB2{space}_{interval}.off'
         dist = np.loadtxt(matlab_test_path)
         vertices, faces = read_off(point_test_path)
         furthest_idx =  int(np.argmax(dist))
         plot_geodesic_field_pyvista(vertices, faces, dist, source_idx=0, furthest_idx=furthest_idx)
+
+    elif mode is Mode.SMOOTH_MESH:
+        if smoothing_mode == "sphere":
+            allBoundPoints = bindLABtoSphere(allPoints, allRGBs)
+        elif smoothing_mode == "neural":
+            print("neural")
+            allBoundPoints = bindToNeuralBounding(neural_bounded_filepath, voxel_dim, allPoints, allRGBs)
+        elif smoothing_mode == "pytorch":
+            mesh = pointsToMesh(allPoints, sigma=sigma, vox=vox)
+            # mesh.show()
+            show_original_mesh_pyvista(mesh, show_edges=True, show_normals=False)
+            optimized_mesh = optimize_mesh(mesh, n_iters=20000, lr=5e-4, w_smooth=1.0, w_inside=200.0, w_volume=0.5, sdf_resolution=64)
+            optimized_mesh.show()
+            show_original_mesh_pyvista(optimized_mesh, show_edges=True, show_normals=False)
+
+            allBoundPoints = bindToOptimizedMeshBinding(optimized_mesh, allPoints)
+        else:
+            allBoundPoints = allPoints
+        mesh = pointsToMesh(allBoundPoints)
+        save_off_file(smoothed_path, mesh)
+        show_original_mesh_pyvista(mesh, show_edges=True, show_normals=False)
+
+    elif mode is Mode.FULL:
+        if space == "RGB":
+            vertices = allRGBs
+        else:
+            vertices, faces = read_off(original_path)
+        if distance_measure == "RGD":
+            furthest = furthest_rgd(vertices, allPoints, allRGBs, matlab_path)
+        else:
+            print("euclidean")
+            furthest = furthest_euclidean(allPoints, allRGBs)
+        # plot_lab_points_3d(allPoints, furthestRGBs=furthest, subsample=16)
+        interpolate_interval(allRGBs, furthest, final_LAB_filepath, interval)
+
+    elif mode is Mode.INTERPOLATE:
+        interpolate_files_old(RGB_file, LAB_file, final_LAB_filepath)
+
+    elif mode is Mode.TO_VOXELS:
+        # voxels = convertToVoxels(allPoints, dim=100)
+        # with open(binvox_filepath, "w") as fp:
+            # write(voxels, fp)
+        writeVoxels(allPoints, voxel_dim, binvox_filepath)
+
 
 if __name__ == "__main__":
     main()

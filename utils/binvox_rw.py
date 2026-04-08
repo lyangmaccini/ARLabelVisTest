@@ -202,7 +202,7 @@ def read_as_coord_array(fp, fix_coords=True):
     #return Voxels(data, dims, translate, scale, axis_order)
     return Voxels(np.ascontiguousarray(data), dims, translate, scale, axis_order)
 
-def dense_to_sparse(voxel_data, dtype=np.int):
+def dense_to_sparse(voxel_data, dtype=np.int32):
     """ From dense representation to sparse (coordinate) representation.
     No coordinate reordering.
     """
@@ -268,20 +268,20 @@ def write(voxel_model, fp):
             ctr += 1
             # if ctr hits max, dump
             if ctr==255:
-                fp.write(chr(state))
+                fp.write(chr(int(state)))
                 fp.write(chr(ctr))
                 ctr = 0
                 counter += 1
         else:
             # if switch state, dump
-            fp.write(chr(state))
+            fp.write(chr(int(state)))
             fp.write(chr(ctr))
             state = c
             ctr = 1
             counter += 1
     # flush out remainders
     if ctr > 0:
-        fp.write(chr(state))
+        fp.write(chr(int(state)))
         fp.write(chr(ctr))
         counter += 1
 

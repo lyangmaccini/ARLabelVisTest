@@ -1,8 +1,9 @@
 import trimesh
+import numpy as np
 
 def save_off_file(filename, mesh):
-    if filename.split("/")[0] != "data":
-        filename = "data/" + filename
+    # if filename.split("/")[0] != "data":
+        # filename = "data/" + filename
     off_data = trimesh.exchange.off.export_off(mesh)
     # print("hello")
     with open(filename, "w") as f:
