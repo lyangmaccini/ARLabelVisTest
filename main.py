@@ -1,24 +1,21 @@
 import numpy as np
-from skimage.color import deltaE_cie76, deltaE_ciede94, deltaE_ciede2000, lab2rgb 
 import os
 from multiprocessing import Pool
 import matplotlib.pyplot as plt
 import pyvista as pv 
-from utils.mesh_optimization import pointsToMesh
+from utils.points_to_mesh import pointsToMesh
 import trimesh
 import math
-# from PIL import Image
 import io
-# import alphashape
 from utils.distances import plot_geodesic_field_pyvista
 
 import matplotlib.pyplot as plt
 from enum import Enum
-from utils.color_spaces import RGBtoOKLAB, RGBtoOKLCH
+from utils.color_spaces import RGBtoOKLAB
 
-from utils.distances import furthest_rgd, furthest_euclidean
+from utils.distances import furthest_rgd, furthest_euclidean, furthest_delta_e76_points
 
-from utils.interpolate import interpolate_interval, interpolate_files_old
+from utils.interpolate import interpolate_interval, interpolate_from_files
 from utils.files import read_off, save_off_file
 
 from utils.color_spaces import RGBtoLAB
@@ -29,19 +26,15 @@ from utils.voxels import writeVoxels
 from utils.mesh_optimization import optimize_mesh
 
 class Mode(Enum):
-    RGD = 1,
-    RESAMPLE = 2,
-    SHOW_PLOT = 3,
-    SHOW_MESH = 4,
-    TO_FILE = 5,
-    MESH_FILE = 6,
-    TEST_MATLAB = 7,
-    OKLAB_FILE = 8,
-    OKLCH_FILE = 9,
-    INTERPOLATE = 10,
-    FULL = 11,
-    SMOOTH_MESH = 12,
-    TO_VOXELS = 13,
+    RGD = 1, 
+    SHOW_MESH = 2, 
+    TO_FILE = 3, 
+    MESH_FILE = 4, 
+    TEST_MATLAB = 5, 
+    INTERPOLATE = 6, 
+    FULL = 7, 
+    SMOOTH_MESH = 8, 
+    TO_VOXELS = 9, 
 
 class ColorSpace(Enum):
     CIELAB = 1,
@@ -57,43 +50,6 @@ class SmoothingMethod(Enum):
     NEURAL_BOUNDING = 2,
     PYTORCH = 3,
     GAUSSIAN = 4
-    
-def findPointAtMaxDistance(inputRGB, allLABPoints):
-    inputLAB = RGBtoLAB([inputRGB])[0]
-    allLABPoints = np.array(allLABPoints)
-
-    distances = deltaE_cie76(np.tile(inputLAB, (len(allLABPoints), 1)), allLABPoints)
-    max_distance_index = np.argmax(distances)
-
-    return allLABPoints[max_distance_index]
-
-def process_colors(rgb_range, allLABs):
-    CandidateLABs = []
-    CandidateRGBs = []
-    
-    CandidateRGBs = rgb_range.tolist()
-    print('finished converting RGB to a list')
-    CandidateLABs = np.apply_along_axis(lambda a: findPointAtMaxDistance(a, allLABs), axis=1, arr=rgb_range)
-    CandidateLABs = CandidateLABs.tolist()
-    print('finished generating all candidateLABs')
-    return CandidateLABs, CandidateRGBs
-
-def save_single_view(mesh, rotation_matrix, filename):
-    mesh_copy = trimesh.Trimesh(vertices=mesh.vertices.copy(), faces=mesh.faces.copy())
-    mesh_copy.visual.vertex_colors = mesh.visual.vertex_colors
-    s = trimesh.Scene(mesh)
-    s.apply_transform(rotation_matrix)
-    # png = s.save_image(resolution=[800,800], visible=True)
-    # Image.open(io.BytesIO(png)).save(filename + ".png")
-
-def save_views(mesh: trimesh.Trimesh):
-    r_quarter = trimesh.transformations.rotation_matrix(np.pi/2.0, [0, 1, 0])
-    r_half = trimesh.transformations.rotation_matrix(np.pi, [0, 1, 0])
-    r_three_quarter = trimesh.transformations.rotation_matrix(3.0*np.pi/2.0, [0, 1, 0])
-
-    save_single_view(mesh, r_quarter, "quarter_view")
-    save_single_view(mesh, r_half, "half_view")
-    save_single_view(mesh, r_three_quarter, "three_quarter_view")
 
 def get_mesh_vertex_colors(mesh, allLABs, allRGBs):
     colors = []
@@ -181,24 +137,6 @@ def assign_vertex_colors(mesh:trimesh.Trimesh, allLABs, furthest):
         colors.append([c[0], c[1], c[2], 1.0])
     return np.array(colors)
 
-def resample(filename, count=500):
-    if filename.split("/")[0] != "data":
-        filename = "data/" + filename
-    vertices, faces = read_off(filename)
-    # plot_lab_points_3d(vertices)
-    mesh = trimesh.Trimesh(vertices=vertices, faces=faces)
-    sampled_vertices, face_indices = trimesh.sample.sample_surface_even(mesh, count) # consider adding a seed for consistentcy?
-
-    # resampled = mesh.simplify_quadric_decimation(count)
-    # shape = alphashape.alphashape(sampled_vertices, alpha=0.01)
-    # print(resampled.vertices.shape)
-    # print(shape.vertices.shape)
-    # mesh = trimesh.Trimesh(vertices=shape.vertices, faces=shape.faces)
-    # mesh.show()
-    plot_lab_points_3d(mesh.vertices)
-    print(mesh.vertices.shape)
-    return mesh
-
 def show_original_mesh_pyvista(mesh,
                                show_edges=True,
                                show_normals=False):
@@ -256,22 +194,6 @@ def show_original_mesh_pyvista(mesh,
     plotter.add_axes()
     plotter.show()
 
-def write_point_cloud_ply(points, filename):
-    """Write point cloud as PLY file"""
-    with open(filename, 'w') as f:
-        # Header
-        f.write('ply\n')
-        f.write('format ascii 1.0\n')
-        f.write(f'element vertex {len(points)}\n')
-        f.write('property float x\n')
-        f.write('property float y\n')
-        f.write('property float z\n')
-        f.write('end_header\n')
-        
-        # Data
-        for point in points:
-            f.write(f'{point[0]} {point[1]} {point[2]}\n')
-
 def main():
     num_cpus = os.cpu_count() 
     n_processes = num_cpus - 4 # Change this to use more/less CPUs. 
@@ -321,9 +243,9 @@ def main():
     # mode = Mode.INTERPOLATE
 
     # mode = Mode.FULL
-    mode = Mode.MESH_FILE
+    # mode = Mode.MESH_FILE
     # mode = Mode.SMOOTH_MESH
-    # mode = Mode.TO_VOXELS
+    mode = Mode.TO_VOXELS
 
     if mode is Mode.RGD:
         vertices, faces = read_off(original_path)
@@ -398,13 +320,11 @@ def main():
         interpolate_interval(allRGBs, furthest, final_LAB_filepath, interval)
 
     elif mode is Mode.INTERPOLATE:
-        interpolate_files_old(RGB_file, LAB_file, final_LAB_filepath)
+        interpolate_from_files(RGB_file, LAB_file, final_LAB_filepath)
 
     elif mode is Mode.TO_VOXELS:
-        # voxels = convertToVoxels(allPoints, dim=100)
-        # with open(binvox_filepath, "w") as fp:
-            # write(voxels, fp)
         writeVoxels(allPoints, voxel_dim, binvox_filepath)
+        # print("test!")
 
 
 if __name__ == "__main__":

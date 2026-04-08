@@ -174,7 +174,7 @@ if __name__ == "__main__":
 
 
 
-def interpolate_files_old(RGB_filepath, LAB_filepath, new_LAB_filepath):
+def interpolate_from_files(RGB_filepath, LAB_filepath, new_LAB_filepath):
     RGB_file = open(RGB_filepath, "r")
     LAB_file = open(LAB_filepath, "r")
 

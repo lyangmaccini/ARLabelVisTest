@@ -1,13 +1,9 @@
 import numpy as np
-# import alphashape
 import trimesh
-# import torch
-# from tqdm import tqdm
-# from scipy.optimize import minimize
-# import pyvista as pv
-# import open3d as o3d
-from utils.points_to_mesh import build_gamut_mesh
-# import kaolin as kal
+import torch
+import torch.nn.functional as F
+import numpy as np
+import trimesh
 # torch version: torch-2.5.1 + cu118
 
 # def pointsToMesh(allLABs):
@@ -22,59 +18,20 @@ from utils.points_to_mesh import build_gamut_mesh
 #         print("WARNING WARNING: LAB mesh is not watertight")
 #     return mesh
 
-def pointsToMesh(allLABs, sigma=1.25, vox=256):
-    # mesh = trimesh.convex.convex_hull(allLABs)
-    # default sigm
-    mesh = build_gamut_mesh(
-        allLABs,
-        vox_res=vox,           # increase to 256 for full 16.7M point cloud
-        smooth_sigma=sigma,
-        target_faces=50_000,
-        # smooth_iterations=10,
-    )
-
-    return mesh
-
-def insideMesh(point: np.array, mesh: trimesh.Trimesh):
-    # point should be a 1x3 numpy array
-    # Returns whether point is on or within the mesh
-    # print(point)
-    containment = mesh.contains([point])
-    # still need to check for points on the mesh surface 
-    # print(containment.shape)
-    return containment[0]
 
 
-import torch
-import torch.nn.functional as F
-import numpy as np
-import trimesh
 
 
-# ─────────────────────────────────────────────
-# SDF grid (precomputed, used for inside-check)
-# ─────────────────────────────────────────────
 
-# def build_sdf_grid(mesh: trimesh.Trimesh, resolution: int = 64):
-#     """
-#     Precompute a signed distance field on a uniform grid.
-#     Convention: negative = inside mesh, positive = outside.
-#     """
-#     bounds_min = mesh.bounds[0].copy()
-#     bounds_max = mesh.bounds[1].copy()
-#     padding = (bounds_max - bounds_min) * 0.05
-#     bounds_min -= padding
-#     bounds_max += padding
 
-#     lin = [np.linspace(bounds_min[i], bounds_max[i], resolution) for i in range(3)]
-#     xx, yy, zz = np.meshgrid(*lin, indexing="ij")
-#     pts = np.stack([xx.ravel(), yy.ravel(), zz.ravel()], axis=1)
 
-#     _, distances, _ = trimesh.proximity.closest_point(mesh, pts)
-#     signs = np.where(mesh.contains(pts), -1.0, 1.0)
-#     sdf = (distances * signs).reshape(resolution, resolution, resolution).astype(np.float32)
 
-#     return torch.tensor(sdf), bounds_min, bounds_max
+
+
+
+
+
+
 def build_sdf_grid(mesh: trimesh.Trimesh, resolution: int = 64):
     bounds_min = mesh.bounds[0].copy()
     bounds_max = mesh.bounds[1].copy()
@@ -124,17 +81,7 @@ def query_sdf(vertices: torch.Tensor, sdf_grid: torch.Tensor,
                         align_corners=True, padding_mode="border")
     return out.view(-1)  # (V,)
 
-
-# ─────────────────────────────────────────────
-# Laplacian (graph smoothness operator)
-# ─────────────────────────────────────────────
-
 def build_laplacian(mesh: trimesh.Trimesh) -> torch.Tensor:
-    """
-    Normalised graph Laplacian as a sparse COO tensor.
-    (Lv)[i] = v[i] - mean(v[neighbours of i])
-    When ||Lv||² = 0 the mesh is perfectly smooth.
-    """
     n = len(mesh.vertices)
     edges = mesh.edges_unique           # (E, 2), undirected
 
@@ -153,26 +100,12 @@ def build_laplacian(mesh: trimesh.Trimesh) -> torch.Tensor:
     val = torch.tensor(vals, dtype=torch.float32)
     return torch.sparse_coo_tensor(idx, val, (n, n)).coalesce()
 
-
-# ─────────────────────────────────────────────
-# Differentiable mesh volume
-# ─────────────────────────────────────────────
-
 def mesh_volume(vertices: torch.Tensor, faces: torch.Tensor) -> torch.Tensor:
-    """
-    Signed volume via the divergence theorem:
-      V = (1/6) Σ_f  v0 · (v1 × v2)
-    Requires consistently outward-oriented faces (trimesh guarantees this).
-    """
     v0 = vertices[faces[:, 0]]
     v1 = vertices[faces[:, 1]]
     v2 = vertices[faces[:, 2]]
     return torch.abs((v0 * torch.cross(v1, v2, dim=1)).sum() / 6.0)
 
-
-# ─────────────────────────────────────────────
-# Main optimiser
-# ─────────────────────────────────────────────
 
 def optimize_mesh(
     original_mesh: trimesh.Trimesh,
@@ -570,7 +503,21 @@ def optimize_mesh(
 #             # print(colors)
 #         return self.intermediate_meshes
     
-
-
     
 
+def save_single_view(mesh, rotation_matrix, filename):
+    mesh_copy = trimesh.Trimesh(vertices=mesh.vertices.copy(), faces=mesh.faces.copy())
+    mesh_copy.visual.vertex_colors = mesh.visual.vertex_colors
+    s = trimesh.Scene(mesh)
+    s.apply_transform(rotation_matrix)
+    # png = s.save_image(resolution=[800,800], visible=True)
+    # Image.open(io.BytesIO(png)).save(filename + ".png")
+
+def save_views(mesh: trimesh.Trimesh):
+    r_quarter = trimesh.transformations.rotation_matrix(np.pi/2.0, [0, 1, 0])
+    r_half = trimesh.transformations.rotation_matrix(np.pi, [0, 1, 0])
+    r_three_quarter = trimesh.transformations.rotation_matrix(3.0*np.pi/2.0, [0, 1, 0])
+
+    save_single_view(mesh, r_quarter, "quarter_view")
+    save_single_view(mesh, r_half, "half_view")
+    save_single_view(mesh, r_three_quarter, "three_quarter_view")

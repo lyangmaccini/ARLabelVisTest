@@ -1,6 +1,8 @@
 import numpy as np
 from scipy.spatial import KDTree, ConvexHull
 import math
+from utils.color_spaces import RGBtoLAB
+from skimage.color import deltaE_cie76
 
 def closest_vertices_batch(lab_points: np.ndarray, mesh_tree: KDTree) -> np.ndarray:
     """For each LAB point, return the index of the closest mesh vertex."""
@@ -71,19 +73,16 @@ def get_extreme_candidates(vertices, n_directions=2048):
     candidate_indices = np.unique(dots.argmax(axis=0))  # (<=K,)
     return candidate_indices
 
+def furthest_delta_e76_points(inputRGB, allLABPoints):
+    inputLAB = RGBtoLAB([inputRGB])[0]
+    allLABPoints = np.array(allLABPoints)
 
-# def furthest_euclidean(allPoints, allRGBs, batch_size=10000):
+    distances = deltaE_cie76(np.tile(inputLAB, (len(allLABPoints), 1)), allLABPoints)
+    max_distance_index = np.argmax(distances)
 
-#     hull = ConvexHull(allPoints)
-#     hull_idx = hull.vertices
-#     hull_pts = allPoints[hull_idx]
+    return allLABPoints[max_distance_index]
 
-#     difference = allPoints[:, None, :] - hull_pts[None, :, :]
-#     abs_difference = np.einsum('ijk,ijk->ij', difference, difference)
-
-#     return allRGBs[np.argmax(abs_difference, axis=1)]
-
-def furthest_lab_points(allLABs, chunk_size=10_000):
+def furthest_euclidean_lab_points(allLABs, chunk_size=10_000):
     """
     allLABs: (N, 3) float array of CIELAB points in allRGBs order
     returns: (N, 3) float32 array of furthest LAB point for each input
@@ -124,45 +123,11 @@ def furthest_euclidean(allPoints, allRGBs, batch_size=5000):
     #     result_indices[start:end] = np.argmax(abs_difference, axis=1)
    
     # return allRGBs[result_indices]
-    furthest = furthest_lab_points(allPoints)
+    # furthest = furthest_lab_points(allPoints)
 
     # For RGB:
-    # furthest = np.where(allRGBs < 128, 255, 0).astype(np.uint8) 
+    furthest = np.where(allRGBs < 128, 255, 0).astype(np.uint8) 
     return furthest
-
-
-# def furthest_euclidean(vertices, allPoints, allRGBs):
-#     allPoints = np.asarray(allPoints, dtype=float)
-#     allRGBs = np.asarray(allRGBs)
-
-#     print("Building KDTrees...")
-#     mesh_tree = KDTree(vertices)
-#     lab_tree = KDTree(allPoints)
-#     LABtoVertices = closest_vertices_batch(allPoints, mesh_tree)
-#     VerticestoLAB = closest_labs_batch(vertices, lab_tree)
-#     print(f"  {len(allPoints)} LAB points <-> {len(vertices)} mesh vertices mapped")
-
-#     unique_sources = np.unique(LABtoVertices)
-#     n_unique = len(unique_sources)
-
-#     print(f"Finding furthest for {n_unique} unique sources ({len(allPoints)} LAB points)...")
-
-#     furthestRGBs = []
-
-#     for i in range(allPoints.shape[0]):
-#         vert = vertices[LABtoVertices[i]]
-#         furthest_vert = 0
-#         furthest_dist = -1
-#         for i, mesh_vertex in enumerate(vertices):
-#             euclidean_dist = euclidean_distance(mesh_vertex, vert)
-#             if euclidean_dist > furthest_dist:
-#                 furthest_dist = euclidean_dist
-#                 furthest_vert = i
-
-#         furthest_lab = VerticestoLAB[int(furthest_vert)]
-#         furthestRGBs.append(allRGBs[int(furthest_lab)])
-
-#     return np.array(furthestRGBs)
 
 def plot_geodesic_field(mesh, distances,
                         source_idx=None,

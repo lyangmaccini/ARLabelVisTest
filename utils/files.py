@@ -1,5 +1,6 @@
 import trimesh
 import numpy as np
+from utils.distances import furthest_delta_e76_points
 
 def save_off_file(filename, mesh):
     # if filename.split("/")[0] != "data":
@@ -9,6 +10,17 @@ def save_off_file(filename, mesh):
     with open(filename, "w") as f:
         f.write(off_data)
     print("Saved to " + filename)
+
+def process_colors(rgb_range, allLABs):
+    CandidateLABs = []
+    CandidateRGBs = []
+    
+    CandidateRGBs = rgb_range.tolist()
+    print('finished converting RGB to a list')
+    CandidateLABs = np.apply_along_axis(lambda a: furthest_delta_e76_points(a, allLABs), axis=1, arr=rgb_range)
+    CandidateLABs = CandidateLABs.tolist()
+    print('finished generating all candidateLABs')
+    return CandidateLABs, CandidateRGBs
 
 def read_off(filename):
     """
@@ -52,3 +64,19 @@ def read_off(filename):
             faces.append(parts[1:4])
     
     return np.array(vertices), np.array(faces)
+
+def write_point_cloud_ply(points, filename):
+    """Write point cloud as PLY file"""
+    with open(filename, 'w') as f:
+        # Header
+        f.write('ply\n')
+        f.write('format ascii 1.0\n')
+        f.write(f'element vertex {len(points)}\n')
+        f.write('property float x\n')
+        f.write('property float y\n')
+        f.write('property float z\n')
+        f.write('end_header\n')
+        
+        # Data
+        for point in points:
+            f.write(f'{point[0]} {point[1]} {point[2]}\n')
