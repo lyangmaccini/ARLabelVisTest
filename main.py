@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 from enum import Enum
 from utils.color_spaces import RGBtoOKLAB
 
-from utils.distances import furthest_rgd, furthest_euclidean, furthest_delta_e76_points
+from utils.distances import furthest_rgd, furthest_euclidean, furthest_delta_e76_points, furthest_euclidean_lab_points
 
 from utils.interpolate import interpolate_interval, interpolate_from_files
 from utils.files import read_off, save_off_file
@@ -22,6 +22,7 @@ from utils.color_spaces import RGBtoLAB
 from utils.distances import euclidean_distance
 from utils.binding import bindLABtoSphere, bindToNeuralBounding, bindToOptimizedMeshBinding
 from utils.voxels import writeVoxels
+from utils.metrics import run_metrics, process_final_colors
 
 from utils.mesh_optimization import optimize_mesh
 
@@ -35,6 +36,7 @@ class Mode(Enum):
     FULL = 7, 
     SMOOTH_MESH = 8, 
     TO_VOXELS = 9, 
+    METRICS = 10
 
 class ColorSpace(Enum):
     CIELAB = 1,
@@ -195,47 +197,51 @@ def show_original_mesh_pyvista(mesh,
     plotter.show()
 
 def main():
-    num_cpus = os.cpu_count() 
-    n_processes = num_cpus - 4 # Change this to use more/less CPUs. 
-    print("Number of CPUs:", num_cpus, "Number of CPUs we are using:", n_processes)
+    # num_cpus = os.cpu_count() 
+    # n_processes = num_cpus - 4 # Change this to use more/less CPUs. 
+    # print("Number of CPUs:", num_cpus, "Number of CPUs we are using:", n_processes)
 
     interval = 1
-    space = "OKLAB"
+    space = "CIELAB"
     distance_measure = "RGD"
-    alpha = "05"
+    alpha = "75"
     voxel_dim = 256
-    sigma = 4.0
+    sigma = 0.0
     vox = 256
     str_sigma = str(sigma).replace(".", "o")
 
     # neural, sphere, pytorch, none (gaussian?)
     smoothing_mode = "neural"
 
-    original_path = f"RGD_MATLAB/RGB2{space}_{interval}_sigma_{str_sigma}_vox_{vox}.off"
-    # original_path = f"RGD_MATLAB/RGB2{space}_{smoothing_mode}_{interval}.off"
-    matlab_path = f"RGD_MATLAB/max_indices_{space}_{interval}_{distance_measure}_{alpha}_sigma_{str_sigma}_vox_{vox}.txt"
-    # matlab_path = f"RGD_MATLAB/max_indices_{space}_{interval}_{distance_measure}_{alpha}_{smoothing_mode}_{voxel_dim}.txt"
+    if (smoothing_mode == "none"):
+        # print("NO SMOOTHING/GAUSSIAN")
+        final_LAB_filepath = f"AllCandidateLABvals_{space}_{interval}_{distance_measure}_{alpha}_sigma_{str_sigma}_vox_{vox}.txt"
+        # print("goal: " + final_LAB_filepath)
+        original_path = f"RGD_MATLAB/RGB2{space}_{interval}_sigma_{str_sigma}_vox_{vox}.off"
+        matlab_path = f"RGD_MATLAB/max_indices_{space}_{interval}_{distance_measure}_{alpha}_sigma_{str_sigma}_vox_{vox}.txt"
+    else:
+        print("SMOOTHING")
+        original_path = f"RGD_MATLAB/RGB2{space}_{smoothing_mode}_{interval}.off"
+        matlab_path = f"RGD_MATLAB/max_indices_{space}_{interval}_{distance_measure}_{alpha}_{smoothing_mode}_{voxel_dim}.txt"
+        final_LAB_filepath = f"AllCandidateLABvals_{space}_{interval}_{distance_measure}_{alpha}_{smoothing_mode}_{voxel_dim}.txt"
 
-    final_LAB_filepath = f"AllCandidateLABvals_{space}_{interval}_{distance_measure}_{alpha}_sigma_{str_sigma}_vox_{vox}.txt"
-    # final_LAB_filepath = f"AllCandidateLABvals_{space}_{interval}_{distance_measure}_{alpha}_{smoothing_mode}_{voxel_dim}.txt"
+    # original_path = f"RGD_MATLAB/RGB2{space}_{interval}_sigma_{str_sigma}_vox_{vox}.off"
+    # # original_path = f"RGD_MATLAB/RGB2{space}_{smoothing_mode}_{interval}.off"
+    # matlab_path = f"RGD_MATLAB/max_indices_{space}_{interval}_{distance_measure}_{alpha}_sigma_{str_sigma}_vox_{vox}.txt"
+    # # matlab_path = f"RGD_MATLAB/max_indices_{space}_{interval}_{distance_measure}_{alpha}_{smoothing_mode}_{voxel_dim}.txt"
+
+    # final_LAB_filepath = f"AllCandidateLABvals_{space}_{interval}_{distance_measure}_{alpha}_sigma_{str_sigma}_vox_{vox}.txt"
+    # # final_LAB_filepath = f"AllCandidateLABvals_{space}_{interval}_{distance_measure}_{alpha}_{smoothing_mode}_{voxel_dim}.txt"
 
     LAB_file = f"CandidateLABvals_MATLAB_{space}_{interval}_{distance_measure}_{alpha}.txt"
     RGB_file = f"CorrespondingRGBVals_MATLAB_{space}_{interval}_{distance_measure}_{alpha}.txt"
 
     saved_furthest_path = f"data/MATLAB_FurthestRGB_From{space}_{interval}_{distance_measure}_{alpha}.txt"
 
-    smoothed_path = f"RGD_MATLAB/RGB2{space}_{smoothing_mode}_{interval}.off"
+    smoothed_path = f"RGD_MATLAB/RGB2{space}_{smoothing_mode}_{interval}_sigma_{sigma}.off"
     binvox_filepath = f"neural_bounding/data/3D/{space}_{interval}_{str(voxel_dim)}.binvox"
     neural_bounded_filepath = f"data/neural_bounding_{space}_{voxel_dim}.binvox"
 
-    allRGBs, allLABs = generate_LABs(stepSize=interval)
-
-    if space == "OKLAB":
-        allPoints = RGBtoOKLAB(allRGBs)
-    elif space == "RGB":
-        allPoints = allRGBs
-    else:
-        allPoints = allLABs
 
 
     # mode = Mode.RGD
@@ -245,7 +251,19 @@ def main():
     # mode = Mode.FULL
     # mode = Mode.MESH_FILE
     # mode = Mode.SMOOTH_MESH
-    mode = Mode.TO_VOXELS
+    # mode = Mode.TO_VOXELS
+    mode = Mode.METRICS
+
+    if mode is not Mode.METRICS:
+        allRGBs, allLABs = generate_LABs(stepSize=interval)
+
+        if space == "OKLAB":
+            allPoints = RGBtoOKLAB(allRGBs)
+        elif space == "RGB":
+            allPoints = allRGBs
+        else:
+            allPoints = allLABs
+
 
     if mode is Mode.RGD:
         vertices, faces = read_off(original_path)
@@ -274,7 +292,7 @@ def main():
     elif mode is Mode.MESH_FILE:
         # plot_lab_points_3d(allPoints)
         mesh = pointsToMesh(allPoints, sigma=sigma, vox=vox)
-        save_off_file(original_path, mesh)
+        # save_off_file(original_path, mesh)
         show_original_mesh_pyvista(mesh, show_edges=True, show_normals=False)
 
     elif mode is Mode.TEST_MATLAB:
@@ -315,7 +333,9 @@ def main():
             furthest = furthest_rgd(vertices, allPoints, allRGBs, matlab_path)
         else:
             print("euclidean")
-            furthest = furthest_euclidean(allPoints, allRGBs)
+            # furthest = furthest_euclidean(allPoints, allRGBs)
+            furthest = furthest_euclidean_lab_points(allPoints)
+            # furthest = furthest_delta_e76_points(allRGBs, allPoints)
         # plot_lab_points_3d(allPoints, furthestRGBs=furthest, subsample=16)
         interpolate_interval(allRGBs, furthest, final_LAB_filepath, interval)
 
@@ -325,6 +345,19 @@ def main():
     elif mode is Mode.TO_VOXELS:
         writeVoxels(allPoints, voxel_dim, binvox_filepath)
         # print("test!")
+        # vertices, faces = read_off(original_path)
+        # new_vertices, new_faces = read_off(smoothed_path)
+        # new_mesh = trimesh.Trimesh(vertices=new_vertices, faces=new_faces)
+        # show_original_mesh_pyvista(new_mesh)
+
+    elif mode is Mode.METRICS:
+        run_metrics()
+        # original_csv = "data/label_colors_export_og.csv"
+        # new_csv = "data/label_colors_export_new.csv"
+        # smoothed_csv = "data/label_colors_export.csv"
+        # process_final_colors(original_csv, "original_gradients.png")
+        # process_final_colors(new_csv, "new_gradients.png")
+        # process_final_colors(smoothed_csv, "smoothed_gradients.png")
 
 
 if __name__ == "__main__":

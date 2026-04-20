@@ -2,7 +2,7 @@ import numpy as np
 from scipy.spatial import KDTree, ConvexHull
 import math
 from utils.color_spaces import RGBtoLAB
-from skimage.color import deltaE_cie76
+from skimage.color import deltaE_cie76, deltaE_ciede2000, lab2rgb
 
 def closest_vertices_batch(lab_points: np.ndarray, mesh_tree: KDTree) -> np.ndarray:
     """For each LAB point, return the index of the closest mesh vertex."""
@@ -102,8 +102,7 @@ def furthest_euclidean_lab_points(allLABs, chunk_size=10_000):
         print(i)
         chunk = lab[i:i+chunk_size]
         dists_sq = np.sum((chunk[:, None, :] - hull_verts[None, :, :]) ** 2, axis=-1)
-        furthest[i:i+chunk_size] = hull_verts[np.argmax(dists_sq, axis=1)]
-
+        furthest[i:i+chunk_size] = 255.0 * lab2rgb(hull_verts[np.argmax(dists_sq, axis=1)])
     return furthest
 
 def furthest_euclidean(allPoints, allRGBs, batch_size=5000):

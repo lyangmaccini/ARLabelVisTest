@@ -6,32 +6,6 @@ import numpy as np
 import trimesh
 # torch version: torch-2.5.1 + cu118
 
-# def pointsToMesh(allLABs):
-#     # Converts given points to a trimesh
-#     # allLABs: RGB points at each step size converted into LAB points; size nx3
-
-#     alpha = 0.01 # hyperparameter
-#     shape = alphashape.alphashape(allLABs, alpha=alpha)
-#     mesh = trimesh.Trimesh(vertices=np.array(shape.vertices), faces=shape.faces)
-
-#     if not mesh.is_watertight:
-#         print("WARNING WARNING: LAB mesh is not watertight")
-#     return mesh
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 def build_sdf_grid(mesh: trimesh.Trimesh, resolution: int = 64):
     bounds_min = mesh.bounds[0].copy()
     bounds_max = mesh.bounds[1].copy()

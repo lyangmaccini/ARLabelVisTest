@@ -1,15 +1,15 @@
 
 clearvars; close all; clc;
 disp(pwd);
-filename = 'RGB2OKLAB_1_sigma_4o0_vox_256';
-final_file = 'max_indices_oklab_1_RGD_05_sigma_4o0_vox_256.txt';
+filename = 'RGB2CIELAB_neural_1';
+final_file = 'max_indices_cielab_1_RGD_125_neural_256.txt';
 x0 = 1;
 
 % Load mesh
 Mm = MeshClass(filename);
 
 %% Regularized - Dirichlet Energy
-alpha_hat0 = 0.05;
+alpha_hat0 = 1.25;
 
 % Initial computation
 u_D1 = rdg_ADMM(Mm, x0, 'alpha_hat', alpha_hat0);

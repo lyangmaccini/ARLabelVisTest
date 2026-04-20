@@ -80,7 +80,6 @@ def build_gamut_mesh(
     grid[idx[:, 0], idx[:, 1], idx[:, 2]] = 1.0
     print(f"  Occupied voxels: {grid.sum():,.0f}")
 
-    # ── 2. Gaussian blur → smooth iso-surface field ───────────────────────────
     print(f"Smoothing field (sigma={smooth_sigma})…")
     blurred = gaussian_filter(grid, sigma=smooth_sigma)
 
