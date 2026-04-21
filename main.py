@@ -1,29 +1,20 @@
 import numpy as np
-import os
-from multiprocessing import Pool
 import matplotlib.pyplot as plt
 import pyvista as pv 
 from utils.points_to_mesh import pointsToMesh
 import trimesh
-import math
-import io
 from utils.distances import plot_geodesic_field_pyvista
-
 import matplotlib.pyplot as plt
 from enum import Enum
 from utils.color_spaces import RGBtoOKLAB
-
 from utils.distances import furthest_rgd, furthest_euclidean, furthest_delta_e76_points, furthest_euclidean_lab_points
-
 from utils.interpolate import interpolate_interval, interpolate_from_files
 from utils.files import read_off, save_off_file
-
 from utils.color_spaces import RGBtoLAB
 from utils.distances import euclidean_distance
 from utils.binding import bindLABtoSphere, bindToNeuralBounding, bindToOptimizedMeshBinding
 from utils.voxels import writeVoxels
 from utils.metrics import run_metrics, process_final_colors
-
 from utils.mesh_optimization import optimize_mesh
 
 class Mode(Enum):
@@ -37,21 +28,6 @@ class Mode(Enum):
     SMOOTH_MESH = 8, 
     TO_VOXELS = 9, 
     METRICS = 10
-
-class ColorSpace(Enum):
-    CIELAB = 1,
-    RGB = 2,
-    OKLAB = 3,
-
-class DistanceMeasure(Enum):
-    EUCLIDEAN = 1,
-    RGD = 2
-
-class SmoothingMethod(Enum):
-    SPHERE = 1,
-    NEURAL_BOUNDING = 2,
-    PYTORCH = 3,
-    GAUSSIAN = 4
 
 def get_mesh_vertex_colors(mesh, allLABs, allRGBs):
     colors = []
@@ -146,7 +122,6 @@ def show_original_mesh_pyvista(mesh,
     V = mesh.vertices
     F = mesh.faces
 
-    # Convert faces to PyVista format
     faces_pv = np.hstack(
         [np.full((F.shape[0], 1), 3), F]
     ).astype(np.int32).ravel()
@@ -197,17 +172,13 @@ def show_original_mesh_pyvista(mesh,
     plotter.show()
 
 def main():
-    # num_cpus = os.cpu_count() 
-    # n_processes = num_cpus - 4 # Change this to use more/less CPUs. 
-    # print("Number of CPUs:", num_cpus, "Number of CPUs we are using:", n_processes)
-
     interval = 1
     space = "CIELAB"
     distance_measure = "RGD"
     alpha = "75"
-    voxel_dim = 256
+    voxel_dim = 256 # neural binding
     sigma = 0.0
-    vox = 256
+    vox = 256 # meshing
     str_sigma = str(sigma).replace(".", "o")
 
     # neural, sphere, pytorch, none (gaussian?)
@@ -225,14 +196,6 @@ def main():
         matlab_path = f"RGD_MATLAB/max_indices_{space}_{interval}_{distance_measure}_{alpha}_{smoothing_mode}_{voxel_dim}.txt"
         final_LAB_filepath = f"AllCandidateLABvals_{space}_{interval}_{distance_measure}_{alpha}_{smoothing_mode}_{voxel_dim}.txt"
 
-    # original_path = f"RGD_MATLAB/RGB2{space}_{interval}_sigma_{str_sigma}_vox_{vox}.off"
-    # # original_path = f"RGD_MATLAB/RGB2{space}_{smoothing_mode}_{interval}.off"
-    # matlab_path = f"RGD_MATLAB/max_indices_{space}_{interval}_{distance_measure}_{alpha}_sigma_{str_sigma}_vox_{vox}.txt"
-    # # matlab_path = f"RGD_MATLAB/max_indices_{space}_{interval}_{distance_measure}_{alpha}_{smoothing_mode}_{voxel_dim}.txt"
-
-    # final_LAB_filepath = f"AllCandidateLABvals_{space}_{interval}_{distance_measure}_{alpha}_sigma_{str_sigma}_vox_{vox}.txt"
-    # # final_LAB_filepath = f"AllCandidateLABvals_{space}_{interval}_{distance_measure}_{alpha}_{smoothing_mode}_{voxel_dim}.txt"
-
     LAB_file = f"CandidateLABvals_MATLAB_{space}_{interval}_{distance_measure}_{alpha}.txt"
     RGB_file = f"CorrespondingRGBVals_MATLAB_{space}_{interval}_{distance_measure}_{alpha}.txt"
 
@@ -242,16 +205,9 @@ def main():
     binvox_filepath = f"neural_bounding/data/3D/{space}_{interval}_{str(voxel_dim)}.binvox"
     neural_bounded_filepath = f"data/neural_bounding_{space}_{voxel_dim}.binvox"
 
-
-
-    # mode = Mode.RGD
-    # mode = Mode.TO_FILE
-    # mode = Mode.INTERPOLATE
-
     # mode = Mode.FULL
     # mode = Mode.MESH_FILE
     # mode = Mode.SMOOTH_MESH
-    # mode = Mode.TO_VOXELS
     mode = Mode.METRICS
 
     if mode is not Mode.METRICS:
@@ -270,7 +226,6 @@ def main():
         furthest = furthest_rgd(vertices, allPoints, allRGBs, matlab_path)
         print(furthest)
         print(furthest.shape)
-        # plot_lab_points_3d(allLABs[::4], furthestRGBs=furthest[::4])
         np.savetxt(saved_furthest_path, furthest, fmt='%d')
         print("Saved furthest RGB values at interval: " + str(interval))
 
@@ -290,10 +245,9 @@ def main():
         print("Showed furthest RGBs in mesh")
 
     elif mode is Mode.MESH_FILE:
-        # plot_lab_points_3d(allPoints)
         mesh = pointsToMesh(allPoints, sigma=sigma, vox=vox)
-        # save_off_file(original_path, mesh)
         show_original_mesh_pyvista(mesh, show_edges=True, show_normals=False)
+        print(f"Saved mesh with sigma {sigma}, voxel {vox}, color space {space}")
 
     elif mode is Mode.TEST_MATLAB:
         matlab_test_path = "RGD_MATLAB/u_D1.csv"
@@ -311,7 +265,6 @@ def main():
             allBoundPoints = bindToNeuralBounding(neural_bounded_filepath, voxel_dim, allPoints, allRGBs)
         elif smoothing_mode == "pytorch":
             mesh = pointsToMesh(allPoints, sigma=sigma, vox=vox)
-            # mesh.show()
             show_original_mesh_pyvista(mesh, show_edges=True, show_normals=False)
             optimized_mesh = optimize_mesh(mesh, n_iters=20000, lr=5e-4, w_smooth=1.0, w_inside=200.0, w_volume=0.5, sdf_resolution=64)
             optimized_mesh.show()
@@ -333,10 +286,7 @@ def main():
             furthest = furthest_rgd(vertices, allPoints, allRGBs, matlab_path)
         else:
             print("euclidean")
-            # furthest = furthest_euclidean(allPoints, allRGBs)
             furthest = furthest_euclidean_lab_points(allPoints)
-            # furthest = furthest_delta_e76_points(allRGBs, allPoints)
-        # plot_lab_points_3d(allPoints, furthestRGBs=furthest, subsample=16)
         interpolate_interval(allRGBs, furthest, final_LAB_filepath, interval)
 
     elif mode is Mode.INTERPOLATE:
@@ -344,11 +294,6 @@ def main():
 
     elif mode is Mode.TO_VOXELS:
         writeVoxels(allPoints, voxel_dim, binvox_filepath)
-        # print("test!")
-        # vertices, faces = read_off(original_path)
-        # new_vertices, new_faces = read_off(smoothed_path)
-        # new_mesh = trimesh.Trimesh(vertices=new_vertices, faces=new_faces)
-        # show_original_mesh_pyvista(new_mesh)
 
     elif mode is Mode.METRICS:
         run_metrics()
