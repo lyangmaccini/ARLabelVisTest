@@ -1,0 +1,3 @@
+[submodule "neural_bounding"]
+	path = neural_bounding
+	url = https://github.com/wenxin-liu/neural_bounding.git
